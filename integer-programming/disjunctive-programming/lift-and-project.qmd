@@ -1,0 +1,315 @@
+---
+kind: topic
+title: "Lift-and-Project Cuts"
+description: "Why a cut from the split xⱼ ≤ 0 ∨ xⱼ ≥ 1 is a lift-and-project cut, worked out step by step on a small example."
+categories: [cutting planes, 0-1 programming]
+order: 4
+level: intermediate
+prerequisites: "The hull formulation and the cut-generating LP"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import linprog
+from IPython.display import Markdown
+from _lib.orplot import new_axes, shade_polygon, convex_hull, clip_halfplane, mark_point, COLORS
+
+def cglp(xhat, pieces):
+    """Most violated  alpha.x <= beta  valid for the union of the pieces
+       (normalization: all multipliers sum to 1). See the 'Solving' page."""
+    n = len(xhat); sizes = [Ak.shape[0] for Ak, _ in pieces]
+    nv = n + 1 + sum(sizes)
+    A_eq, b_eq, A_ub, b_ub = [], [], [], []
+    off = n + 1
+    for (Ak, bk), m in zip(pieces, sizes):
+        for j in range(n):
+            row = np.zeros(nv); row[j] = 1; row[off:off + m] = -Ak[:, j]
+            A_eq.append(row); b_eq.append(0)
+        row = np.zeros(nv); row[n] = -1; row[off:off + m] = bk
+        A_ub.append(row); b_ub.append(0)
+        off += m
+    row = np.zeros(nv); row[n + 1:] = 1; A_eq.append(row); b_eq.append(1)
+    c = np.zeros(nv); c[:n] = -xhat; c[n] = 1
+    res = linprog(c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq,
+                  bounds=[(None, None)] * (n + 1) + [(0, None)] * sum(sizes))
+    return res.x[:n], res.x[n]
+
+def split_pieces(A, b, j):
+    """P ∩ {x_j <= 0}  and  P ∩ {x_j >= 1}  as (A_k, b_k)."""
+    e = np.zeros(A.shape[1]); e[j] = 1
+    return [(np.vstack([A, e]), np.r_[b, 0]), (np.vstack([A, -e]), np.r_[b, -1])]
+
+def polygon(A, b):
+    """Vertices of {x : A x <= b} inside a large box (2-D)."""
+    V = [(-5, -5), (5, -5), (5, 5), (-5, 5)]
+    for a, beta in zip(A, b):
+        V = clip_halfplane(V, a, beta)
+    uniq = []
+    for v in V:
+        if all(np.hypot(v[0] - w[0], v[1] - w[1]) > 1e-9 for w in uniq):
+            uniq.append(v)
+    return uniq
+
+def draw_set(ax, V, color, alpha=0.35, lw=1.6):
+    """Draw a polygon, segment or single point."""
+    if len(V) >= 3:
+        shade_polygon(ax, V, color, alpha=alpha, lw=lw)
+    elif len(V) == 2:
+        ax.plot(*zip(*V), color=color, lw=5, solid_capstyle="round", zorder=3)
+    elif len(V) == 1:
+        ax.scatter(*V[0], color=color, s=90, zorder=3)
+
+# --- The example: P = {x in [0,1]^2 : 2 x1 + 2 x2 >= 1},  min x1 + x2 ---------
+A0 = np.array([[-2, -2], [1, 0], [-1, 0], [0, 1], [0, -1]], float)
+b0 = np.array([-1, 1, 0, 1, 0], float)
+C = np.array([1.0, 1.0])
+INTEGER_PTS = np.array([(1, 0), (0, 1), (1, 1)])
+
+rounds, A, b = [], A0.copy(), b0.copy()
+for _ in range(6):
+    x = linprog(C, A_ub=A, b_ub=b, bounds=[(None, None)] * 2).x
+    frac = np.abs(x - np.round(x))
+    if frac.max() < 1e-7:
+        final_x = x
+        break
+    j = int(np.argmax(frac))
+    pcs = split_pieces(A, b, j)
+    alpha, beta = cglp(x, pcs)
+    rounds.append(dict(A=A, b=b, x=x, j=j, pieces=[polygon(*p) for p in pcs],
+                       alpha=alpha, beta=beta))
+    A, b = np.vstack([A, alpha]), np.r_[b, beta]
+FINAL_A, FINAL_b = A, b
+
+def cut_text(alpha, beta):
+    """Write  alpha.x <= beta  as  'p x1 + q x2 >= r'  with small integers."""
+    a, r = -alpha, -beta
+    a, r = a / np.min(np.abs(a[np.abs(a) > 1e-9])), r / np.min(np.abs(a[np.abs(a) > 1e-9]))
+    terms = []
+    for coef, name in zip(a, ["x_1", "x_2"]):
+        if abs(coef) < 1e-9: continue
+        c = round(coef)
+        terms.append(("" if c == 1 else f"{c}\\,") + name)
+    return " + ".join(terms) + f" \\geq {round(r)}"
+```
+
+## The setup
+
+Take a 0–1 program and its LP relaxation
+
+$$
+P = \{\, x : A x \le b,\; 0 \le x \le 1 \,\},
+$$
+
+where the bounds $0 \le x \le 1$ are included among the rows of $Ax \le b$. Suppose the LP
+optimum $\hat x$ has a fractional binary variable, $0 < \hat x_j < 1$. Every integer
+solution satisfies the [split](introduction.qmd)
+
+$$
+x_j \le 0 \quad\lor\quad x_j \ge 1 ,
+$$
+
+and with the bounds this is the same as $x_j = 0 \lor x_j = 1$. A **lift-and-project cut**
+is a cut derived from this disjunction. The name comes from how Balas, Ceria and
+Cornuéjols first presented it, as a two-step construction [@balas1993].
+
+## Lift, then project
+
+**Lift.** Multiply every constraint of $P$ by $x_j$, and separately by $(1 - x_j)$. Both
+multipliers are nonnegative on $[0,1]$, so the products keep the direction:
+
+$$
+(b - A x)\, x_j \ge 0, \qquad (b - A x)(1 - x_j) \ge 0 .
+$$
+
+These are quadratic. Make them linear by giving each product its own variable,
+$y_i := x_i x_j$. Because $x_j$ is binary, $x_j^2 = x_j$, so set $y_j = x_j$. The
+result is a **linear** system in the larger space of $(x, y)$:
+
+$$
+b\,x_j - A y \ge 0, \qquad b\,(1 - x_j) - A (x - y) \ge 0, \qquad y_j = x_j .
+$$
+
+**Project.** Eliminate $y$ and look at the set of $x$ that remains. Call it $P_j$.
+
+### Why that's the disjunctive hull
+
+Rename the quantities in the lifted system:
+
+$$
+\lambda_1 = x_j, \qquad \lambda_0 = 1 - x_j, \qquad v^1 = y, \qquad v^0 = x - y .
+$$
+
+The lifted system becomes
+
+$$
+\begin{aligned}
+A v^1 &\le b\, \lambda_1, & v^1_j &= \lambda_1 && (\lambda_1 \times \text{a point of } P \text{ with } x_j = 1), \\
+A v^0 &\le b\, \lambda_0, & v^0_j &= 0         && (\lambda_0 \times \text{a point of } P \text{ with } x_j = 0), \\
+x &= v^0 + v^1, & \lambda_0 &+ \lambda_1 = 1 .
+\end{aligned}
+$$
+
+This is exactly the [hull formulation](big-m-vs-hull.qmd) for the disjunction
+$x_j = 0 \lor x_j = 1$, with each $v^k$ being "$\lambda_k$ times a point of piece $k$".
+So the projection is
+
+$$
+P_j \;=\; \mathrm{conv}\Big( \big(P \cap \{x_j = 0\}\big) \,\cup\, \big(P \cap \{x_j = 1\}\big) \Big),
+$$
+
+and a lift-and-project cut is any inequality valid for $P_j$ that cuts off $\hat x$
+[@balas1993]. In practice you don't build the lifted system and project it. You find the
+cut directly with the [cut-generating LP](solving.qmd), using the two pieces
+$P \cap \{x_j \le 0\}$ and $P \cap \{x_j \ge 1\}$.
+
+"Lift-and-project" is the historical name for one route to the result. "Disjunctive cut
+from a simple binary split" describes the same cut.
+
+## A worked example
+
+Let
+
+$$
+P = \{\, x \in [0,1]^2 : 2x_1 + 2x_2 \ge 1 \,\}, \qquad \min\; x_1 + x_2 .
+$$
+
+The integer points of $P$ are $(1,0)$, $(0,1)$ and $(1,1)$, so the integer optimum is 1.
+The LP relaxation only reaches 0.5. We now run the cutting-plane loop: solve the LP, split
+on a fractional variable, solve the CGLP, add the cut, repeat.
+
+```{python}
+#| label: fig-lap-rounds
+#| fig-cap: "The cutting-plane loop on the example. In each round: the current LP region (grey), the two pieces of the split (blue: $x_j = 0$, orange: $x_j = 1$; here they are segments or single points), their convex hull (green), the LP optimum $\\hat x$ (red), and the lift-and-project cut found by the CGLP (dashed). The last panel is the final LP, which is the integer hull."
+n = len(rounds) + 1
+ncols = 2
+nrows = int(np.ceil(n / ncols))
+fig, grid = plt.subplots(nrows, ncols, figsize=(7.4, 3.9 * nrows))
+axes = grid.ravel()
+for ax in axes:
+    ax.set_xlim(-0.1, 1.15); ax.set_ylim(-0.1, 1.15); ax.set_aspect("equal")
+    ax.grid(True, color=COLORS["grid"], lw=0.5, alpha=0.5)
+    ax.set_xlabel(r"$x_1$"); ax.set_ylabel(r"$x_2$")
+for ax in axes[n:]:
+    ax.set_visible(False)
+for k, (ax, rd) in enumerate(zip(axes, rounds)):
+    draw_set(ax, polygon(rd["A"], rd["b"]), "#888888", alpha=0.15, lw=1.0)
+    hull_pts = [p for piece in rd["pieces"] for p in piece]
+    draw_set(ax, list(map(tuple, convex_hull(hull_pts))), COLORS["hull"], alpha=0.2, lw=1.2)
+    draw_set(ax, rd["pieces"][0], COLORS["p1"])
+    draw_set(ax, rd["pieces"][1], COLORS["p2"])
+    a, bb = rd["alpha"], rd["beta"]
+    xs = np.linspace(-0.1, 1.15, 50)
+    if abs(a[1]) > 1e-9:
+        ax.plot(xs, (bb - a[0] * xs) / a[1], ls="--", color="black", lw=1.2)
+    mark_point(ax, rd["x"], COLORS["weak"], size=55)
+    ax.set_title(f"Round {k + 1}: split on $x_{rd['j'] + 1}$\n"
+                 f"cut ${cut_text(a, bb)}$", fontsize=11)
+ax = axes[n - 1]
+draw_set(ax, polygon(FINAL_A, FINAL_b), COLORS["hull"], alpha=0.3)
+mark_point(ax, final_x, COLORS["hull"], size=55)
+ax.set_title("Final LP = integer hull", fontsize=11)
+for ax in axes[:n]:
+    ax.scatter(*INTEGER_PTS.T, color="black", s=22, zorder=6)
+    ax.set_xticks([0, 0.5, 1]); ax.set_yticks([0, 0.5, 1])
+fig.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: tbl-lap-rounds
+#| tbl-cap: "The cutting-plane loop for $\\min x_1 + x_2$. Each row is one round."
+rows = []
+for k, rd in enumerate(rounds):
+    x = np.round(rd["x"], 6) + 0.0
+    rows.append(f"| {k + 1} | $({x[0]:.2f},\\, {x[1]:.2f})$ | {C @ x:.3f} | "
+                f"$x_{rd['j'] + 1}$ | ${cut_text(rd['alpha'], rd['beta'])}$ |")
+final_x = np.round(final_x, 6) + 0.0
+rows.append(f"| end | $({final_x[0]:.2f},\\, {final_x[1]:.2f})$ | {C @ final_x:.3f} | "
+            "— | integer, stop |")
+Markdown("| Round | LP optimum $\\hat x$ | LP bound | Split | Cut added |\n"
+         "|---|---|---:|---|---|\n" + "\n".join(rows))
+```
+
+Walk through it:
+
+1. **Round 1.** The LP optimum is $(0, 0.5)$, so split on $x_2$. The piece with $x_2 = 0$
+   is the segment from $(0.5, 0)$ to $(1, 0)$; the piece with $x_2 = 1$ is the top edge.
+   Their hull has a new edge from $(0.5, 0)$ to $(0, 1)$, which gives the cut
+   $2x_1 + x_2 \ge 1$. It removes $(0, 0.5)$, since $2 \cdot 0 + 0.5 < 1$, and keeps all
+   three integer points.
+2. **Round 2.** Now the optimum is $(0.5, 0)$; split on $x_1$. With the first cut in
+   place, the piece with $x_1 = 0$ shrinks to the single point $(0, 1)$. The hull of that
+   point and the right edge is the triangle with corners $(1,0)$, $(0,1)$, $(1,1)$ —
+   **already the integer hull**. But the CGLP returns only *one* inequality valid for that
+   triangle, $x_1 + 2x_2 \ge 1$, which cuts off $\hat x$ without being a facet.
+3. **Round 3.** The optimum $(1/3, 1/3)$ is still fractional. Another round gives the facet
+   $x_1 + x_2 \ge 1$, and the LP now returns the integer point $(0, 1)$ with value 1.
+
+Round 2 shows a general point: a split defines the whole hull $P_j$, but one CGLP solve
+returns one cut. Which cut you get depends on the normalization (see the
+[CGLP](solving.qmd#the-cut-generating-lp)), so it can take a few rounds on the same
+disjunction to recover all of $P_j$.
+
+## Sequential convexification
+
+The example reached the integer hull after splitting on $x_2$ and then on $x_1$ — one
+split per binary variable. That isn't luck. For 0–1 programs:
+
+$$
+\big(\cdots\big((P_{j_1})_{j_2}\big)\cdots\big)_{j_n} \;=\; \mathrm{conv}\big(P \cap \{0,1\}^n\big),
+$$
+
+for any order of the variables. Taking the hull with respect to one binary variable at a
+time, each time **starting from the hull already obtained**, gives the integer hull after
+$n$ steps. This is Balas's *sequential convexification* for facial disjunctive programs
+[@balas1998], and Balas, Ceria and Cornuéjols showed the iterated lift-and-project
+procedure is equivalent to it [@balas1993].
+
+It's worth seeing why this is surprising. The integer hull is the hull of a disjunction
+with up to $2^n$ terms, one per 0–1 vector. Sequential convexification gets there with
+$n$ two-term disjunctions. The catch is that each $P_j$ is described by many
+inequalities, so in practice you generate cuts from it a few at a time, as in the example.
+
+::: {.callout-note collapse="true"}
+## Why does it work? (the role of "facial")
+For a binary variable, the two pieces $P \cap \{x_j = 0\}$ and $P \cap \{x_j = 1\}$ are
+**faces** of $P$: each is cut out by an inequality ($x_j \ge 0$ or $x_j \le 1$) that is
+valid for all of $P$. Balas calls a disjunctive program *facial* when every disjunction
+has this property. For facial programs, convexifying one disjunction never "undoes" the
+progress on the others, which is what makes the step-by-step procedure exact
+[@balas1998]. General splits like $x_1 + x_2 \le 1 \lor x_1 + x_2 \ge 2$ are usually not
+facial, and then the guarantee is lost.
+:::
+
+## Two refinements used in practice
+
+**Strengthening.** The CGLP treats every variable other than $x_j$ as continuous. If
+other variables are also integer, the cut's coefficients on them can often be tightened
+after the fact without losing validity. This is the strengthening procedure of Balas and
+Jeroslow [@balasjeroslow1980], which Balas, Ceria and Cornuéjols apply to
+lift-and-project cuts [@balas1993].
+
+**The link to Gomory cuts.** Balas and Perregaard showed a precise correspondence between
+lift-and-project cuts, simple disjunctive (intersection) cuts, and Gomory mixed-integer
+cuts for 0–1 programs [@balas2003]. In particular, a strengthened lift-and-project cut from
+$x_k \le 0 \lor x_k \ge 1$ matches a Gomory mixed-integer cut from a suitable simplex
+tableau row. They also used it to solve the CGLP by pivoting in the original LP's tableau
+instead of building the larger LP.
+
+::: {.callout-tip}
+## Chvátal–Gomory cuts are split cuts too
+Let $\pi$ be an integer vector and suppose $\pi^\top x < \pi_0 + 1$ for every $x \in P$.
+Then the side $\pi^\top x \ge \pi_0 + 1$ of the split is **empty**, the hull of the union
+is just $P \cap \{\pi^\top x \le \pi_0\}$, and the split gives the cut
+$\pi^\top x \le \pi_0$. That is exactly a Chvátal–Gomory cut. Split cuts were studied in
+this generality by Cook, Kannan and Schrijver [@cook1990].
+:::
+
+## Further reading
+
+- @balas1993 — the original lift-and-project paper, with computational results.
+- @balas2003 — the correspondence with Gomory cuts, and solving the CGLP in the small
+  tableau.
+- [Solving Disjunctive Programs](solving.qmd) — the CGLP and how cuts relate to branching.

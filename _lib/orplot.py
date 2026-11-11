@@ -75,6 +75,44 @@ def convex_hull(points):
     return np.array(lower[:-1] + upper[:-1])
 
 
+def clip_halfplane(vertices, a, b):
+    """Clip a convex polygon to the half-plane {x : a.x <= b} (Sutherland-Hodgman).
+
+    Returns the new vertex list (possibly empty). Use it to cut a polytope along a
+    split, e.g. P ∩ {x1 <= 2} is clip_halfplane(V, (1, 0), 2) and
+    P ∩ {x1 >= 3} is clip_halfplane(V, (-1, 0), -3).
+    """
+    a = np.asarray(a, dtype=float)
+    V = [np.asarray(v, dtype=float) for v in vertices]
+    out = []
+    for i in range(len(V)):
+        p, q = V[i], V[(i + 1) % len(V)]
+        fp, fq = a @ p - b, a @ q - b
+        if fp <= 1e-12:
+            out.append(p)
+        if (fp < -1e-12 < fq) or (fq < -1e-12 < fp):
+            t = fp / (fp - fq)
+            out.append(p + t * (q - p))
+    return [tuple(v) for v in out]
+
+
+def lattice_points(vertices, xlim=(0, 10), ylim=(0, 10)):
+    """Integer points inside a convex polygon (counter-clockwise or clockwise)."""
+    H = convex_hull(vertices)
+    pts = []
+    for i in range(int(np.ceil(xlim[0])), int(np.floor(xlim[1])) + 1):
+        for j in range(int(np.ceil(ylim[0])), int(np.floor(ylim[1])) + 1):
+            inside = True
+            for k in range(len(H)):
+                p, q = H[k], H[(k + 1) % len(H)]
+                if (q[0] - p[0]) * (j - p[1]) - (q[1] - p[1]) * (i - p[0]) < -1e-9:
+                    inside = False
+                    break
+            if inside:
+                pts.append((i, j))
+    return np.array(pts)
+
+
 def mark_point(ax, xy, color, label=None, marker="o", size=60):
     ax.scatter([xy[0]], [xy[1]], color=color, s=size, marker=marker,
                zorder=5, edgecolor="white", linewidth=1.2, label=label, clip_on=False)

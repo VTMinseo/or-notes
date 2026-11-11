@@ -32,7 +32,8 @@ Claude and reviewed by the owner. Follow these conventions so new pages slot in 
 
 - Draw figures with matplotlib in `{python}` cells; code is hidden from readers
   (`echo: false` site-wide) but lives in the page.
-- Import shared helpers and colors: `from _lib.orplot import new_axes, shade_polygon, convex_hull, mark_point, COLORS`.
+- Import shared helpers and colors: `from _lib.orplot import new_axes, shade_polygon, convex_hull, clip_halfplane, lattice_points, mark_point, COLORS`.
+  `clip_halfplane` cuts a polygon along a split; `lattice_points` lists its integer points.
   Colors: `p1` blue / `p2` orange for pieces or disjuncts; `weak` red for weaker
   relaxations; `hull` green for the convex hull or strongest relaxation.
 - Every figure cell gets `#| label: fig-...` and a `#| fig-cap:` that says what to notice.

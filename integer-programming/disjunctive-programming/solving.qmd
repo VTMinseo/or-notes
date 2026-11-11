@@ -1,0 +1,289 @@
+---
+kind: topic
+title: "Solving Disjunctive Programs"
+description: "Reformulate, branch, or cut: the cut-generating LP, and how a disjunctive cut relates to a branch-and-bound tree."
+categories: [algorithms, cutting planes, branch-and-bound]
+order: 3
+level: intermediate
+prerequisites: "LP duality and Farkas' lemma; the hull formulation"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import linprog
+from IPython.display import Markdown
+from _lib.orplot import (new_axes, shade_polygon, convex_hull, clip_halfplane,
+                         lattice_points, mark_point, COLORS)
+
+# --- Running example: the split from the introduction page ----------------
+V = [(0.6, 0.6), (4.4, 1.2), (2.6, 3.7), (0.7, 2.8)]
+XHAT = np.array([2.6, 3.7])                 # fractional LP optimum of  max x2
+
+def hrep(vertices):
+    """{x : A x <= b} for a convex polygon given by its vertices."""
+    H = convex_hull(vertices)
+    A, b = [], []
+    for i in range(len(H)):
+        p, q = H[i], H[(i + 1) % len(H)]
+        n = np.array([q[1] - p[1], p[0] - q[0]])   # outward normal (CCW order)
+        A.append(n); b.append(n @ p)
+    return np.array(A), np.array(b)
+
+A, b = hrep(V)
+PIECES = [  # split  x1 <= 2  OR  x1 >= 3,  each piece = P + one inequality
+    (np.vstack([A, [1, 0]]),  np.r_[b, 2]),
+    (np.vstack([A, [-1, 0]]), np.r_[b, -3]),
+]
+P1 = clip_halfplane(V, (1, 0), 2)
+P2 = clip_halfplane(V, (-1, 0), -3)
+HULL = convex_hull(P1 + P2)
+PTS = lattice_points(V, (0, 5), (0, 5))
+
+def cglp(xhat, pieces):
+    """max  alpha.xhat - beta
+       s.t. alpha = A_k^T u_k,  beta >= b_k^T u_k   (every piece k)
+            u_k >= 0,  sum of all u = 1             (normalization)"""
+    n = len(xhat); sizes = [Ak.shape[0] for Ak, _ in pieces]
+    nv = n + 1 + sum(sizes)
+    A_eq, b_eq, A_ub, b_ub = [], [], [], []
+    off = n + 1
+    for (Ak, bk), m in zip(pieces, sizes):
+        for j in range(n):
+            row = np.zeros(nv); row[j] = 1; row[off:off + m] = -Ak[:, j]
+            A_eq.append(row); b_eq.append(0)
+        row = np.zeros(nv); row[n] = -1; row[off:off + m] = bk
+        A_ub.append(row); b_ub.append(0)
+        off += m
+    row = np.zeros(nv); row[n + 1:] = 1; A_eq.append(row); b_eq.append(1)
+    c = np.zeros(nv); c[:n] = -xhat; c[n] = 1
+    res = linprog(c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq,
+                  bounds=[(None, None)] * (n + 1) + [(0, None)] * sum(sizes))
+    return res.x[:n], res.x[n], -res.fun
+
+def lp_max_x2(Ak, bk):
+    res = linprog([0, -1], A_ub=Ak, b_ub=bk, bounds=[(None, None)] * 2)
+    return res.x, -res.fun
+
+ALPHA, BETA, VIOL = cglp(XHAT, PIECES)
+scale = ALPHA[1]                       # print the cut with x2-coefficient 1
+CUT_A, CUT_B = ALPHA / scale, BETA / scale
+```
+
+## Three ways to attack an OR
+
+Once a problem is written as a disjunctive program, there are three main families of
+solution methods. Solvers usually combine them.
+
+**(a) Reformulate, then branch-and-bound.** Encode each disjunction with binary variables,
+using [big-M or the hull formulation](big-m-vs-hull.qmd), and hand the resulting MILP to a
+solver. Big-M models are smaller with weaker bounds; hull models are larger with tighter
+bounds. *Generalized disjunctive programming* (GDP), developed by Grossmann and
+co-authors, mostly works this way: the modeller writes the logic, then picks a
+reformulation for each disjunction [@raman1994].
+
+**(b) Branch on the disjunction itself.** Each child node commits to one term $P_k$ and
+solves an ordinary LP there. Ordinary integer branching, $x_j \le \lfloor \hat x_j \rfloor$
+versus $x_j \ge \lceil \hat x_j \rceil$, is the special case where the disjunction is a
+split.
+
+**(c) Cutting planes.** Keep a single LP and add inequalities that are valid for the
+union of the pieces but cut off the current fractional point:
+
+1. Solve the LP relaxation and get $\hat x$.
+2. Pick a disjunction that $\hat x$ violates, e.g. a split on a fractional variable.
+3. Solve the **cut-generating LP** (CGLP) to find an inequality $\alpha^\top x \le \beta$
+   that is valid for $P_1 \cup P_2$ and violated by $\hat x$.
+4. Add the cut and repeat.
+
+In practice (b) and (c) run together as **branch-and-cut**. The rest of this page explains
+step 3, then how a cut relates to a branch.
+
+## The cut-generating LP
+
+### When is an inequality valid for a union?
+
+An inequality holds on $P_1 \cup P_2$ exactly when it holds on $P_1$ **and** on $P_2$.
+(It is then also valid on $\mathrm{conv}(P_1 \cup P_2)$, since the set of points satisfying
+a linear inequality is convex.)
+
+For a single nonempty polyhedron $P_k = \{x : A_k x \le b_k\}$, Farkas' lemma tells us
+when $\alpha^\top x \le \beta$ is valid: exactly when it can be *derived* from the
+constraints, i.e. there are multipliers $u_k \ge 0$ with
+
+$$
+\alpha = A_k^\top u_k, \qquad \beta \ge b_k^\top u_k .
+$$
+
+In words: add up the constraints of $P_k$ with nonnegative weights $u_k$; if the left side
+comes out as $\alpha^\top x$ and the right side is at most $\beta$, the inequality is
+implied. So an inequality is valid for the union iff it can be derived **in every piece**,
+with each piece allowed its own multipliers [@balas1998].
+
+### The CGLP
+
+Now search over all such inequalities for the one most violated at $\hat x$:
+
+$$
+\begin{aligned}
+\max_{\alpha,\,\beta,\,u}\quad & \alpha^\top \hat x - \beta \\
+\text{s.t.}\quad & \alpha = A_1^\top u_1, \qquad \beta \ge b_1^\top u_1, \\
+                 & \alpha = A_2^\top u_2, \qquad \beta \ge b_2^\top u_2, \\
+                 & u_1, u_2 \ge 0, \\
+                 & \textstyle\sum_i (u_1)_i + \sum_i (u_2)_i = 1 \quad \text{(normalization)} .
+\end{aligned}
+$$
+
+- **Why the normalization?** Without it, the feasible set is a cone: if $(\alpha, \beta,
+  u)$ is feasible, so is any positive multiple. A violated cut could be scaled up forever
+  and the LP would be unbounded. The normalization fixes the scale. Different choices of
+  normalization give different cuts, and choosing one well is a research topic in its
+  own right.
+- **Reading the answer.** A positive optimal value means $\hat x$ violates
+  $\alpha^\top x \le \beta$, so $\hat x \notin \mathrm{conv}(P_1 \cup P_2)$ and we have a
+  cut. An optimal value $\le 0$ means $\hat x$ is already in the hull; this disjunction
+  can't cut it off.
+
+### Its dual is the hull formulation
+
+Take the LP dual of the CGLP. With $y_k$ the multipliers of $\alpha = A_k^\top u_k$,
+$\lambda_k \ge 0$ those of $\beta \ge b_k^\top u_k$, and $s$ that of the normalization,
+the dual is
+
+$$
+\begin{aligned}
+\min\quad & s \\
+\text{s.t.}\quad & \hat x = y_1 + y_2, \qquad \lambda_1 + \lambda_2 = 1, \quad \lambda \ge 0, \\
+& A_k\, y_k \le \lambda_k b_k + s\,\mathbf{1} \qquad (k = 1, 2).
+\end{aligned}
+$$
+
+With $s = 0$ this is exactly the [hull formulation](big-m-vs-hull.qmd) asking whether
+$\hat x$ can be written as $y_1 + y_2$ with $y_k$ "$\lambda_k$ times a point of $P_k$".
+The variable $s$ measures how much all constraints must be loosened for that to work.
+So the CGLP and the hull formulation are two sides of the same LP: one finds the
+separating inequality, the other measures how far $\hat x$ is from the hull.
+
+### Example
+
+The figure uses the split $x_1 \le 2 \lor x_1 \ge 3$ from the
+[introduction](introduction.qmd), with $\hat x = (2.6, 3.7)$ the LP optimum of
+$\max x_2$.
+
+```{python}
+#| label: fig-cglp
+#| fig-cap: "The cut found by the CGLP (black dashed line) for the split $x_1 \\le 2 \\lor x_1 \\ge 3$. It cuts off $\\hat x$, keeps every integer point, and here coincides with an edge of the split hull (green)."
+fig, ax = new_axes(1, xlim=(0, 5), ylim=(0, 4.5), size=4.6)
+shade_polygon(ax, V, "#888888", alpha=0.12)
+shade_polygon(ax, HULL, COLORS["hull"], alpha=0.12)
+shade_polygon(ax, P1, COLORS["p1"]); shade_polygon(ax, P2, COLORS["p2"])
+xs = np.linspace(0, 5, 2)
+ax.plot(xs, CUT_B - CUT_A[0] * xs, ls="--", color="black", lw=1.4)
+ax.text(4.0, CUT_B - CUT_A[0] * 4.0 + 0.12,
+        f"cut: ${CUT_A[0]:.3f}\\,x_1 + x_2 \\leq {CUT_B:.3f}$",
+        ha="center", fontsize=9, rotation=-np.degrees(np.arctan(CUT_A[0])) * 0.85)
+ax.scatter(*PTS.T, color="black", s=16, zorder=4)
+mark_point(ax, XHAT, COLORS["weak"])
+ax.annotate(r"$\hat x$", XHAT, xytext=(6, 4), textcoords="offset points")
+plt.show()
+```
+
+```{python}
+#| output: asis
+print(f"The CGLP's optimal value is {VIOL:.3f} > 0 (a violation measured in its "
+      f"normalized units), so $\\hat x$ is cut off. Rescaled so that $x_2$ has "
+      f"coefficient 1, the cut is "
+      f"$${CUT_A[0]:.3f}\\,x_1 + x_2 \\le {CUT_B:.3f}.$$")
+```
+
+## Isn't this just a branch-and-bound tree?
+
+Partly, yes. A split disjunction is exactly what branch-and-bound branches on. The
+difference is what you do with the two pieces.
+
+- **Branching keeps the pieces apart.** It creates two child nodes,
+  $P \cap \{x_1 \le 2\}$ and $P \cap \{x_1 \ge 3\}$, and solves each LP on its own. The
+  tree grows, and what is learned holds only inside each subtree.
+- **A disjunctive cut merges them.** It takes $\mathrm{conv}(P_1 \cup P_2)$ and records it
+  as an inequality added to the one LP you already have. No new nodes, and the cut is
+  valid everywhere — at every node of any tree you build later.
+
+The link is deeper than an analogy. Look at the dual of the CGLP above: it has **one copy
+of the variables per piece**, each constrained to its own piece. Those are the two child
+LPs, glued together with convex weights and solved at once. A disjunctive cut is a
+depth-one branch-and-bound tree compressed into inequalities.
+
+There's also an exact statement. For a linear objective, the optimum over
+$\mathrm{conv}(P_1 \cup P_2)$ is attained at an extreme point, and every extreme point
+lies in $P_1$ or in $P_2$. So
+
+$$
+\max_{x \in \mathrm{conv}(P_1 \cup P_2)} c^\top x \;=\; \max\big(z_1,\; z_2\big),
+\qquad z_k = \max_{x \in P_k} c^\top x ,
+$$
+
+which is precisely the bound from branching once and keeping the better child. A *single*
+cut generated for one particular $\hat x$ need not reach that bound, but the full set of
+cuts from the disjunction (the hull) does.
+
+```{python}
+#| label: fig-branch-vs-cut
+#| fig-cap: "Left: branching solves two separate child LPs (optima marked). Right: one disjunctive cut added to the original LP. For $\\max x_2$ both give the same bound."
+x1_opt, z1 = lp_max_x2(*PIECES[0])
+x2_opt, z2 = lp_max_x2(*PIECES[1])
+xc_opt, zc = lp_max_x2(np.vstack([A, ALPHA]), np.r_[b, BETA])
+fig, axes = new_axes(2, xlim=(0, 5), ylim=(0, 4.5), size=4.2)
+ax = axes[0]
+shade_polygon(ax, P1, COLORS["p1"]); shade_polygon(ax, P2, COLORS["p2"])
+mark_point(ax, x1_opt, COLORS["p1"]); mark_point(ax, x2_opt, COLORS["p2"])
+ax.annotate(f"$z_1 = {z1:.2f}$", x1_opt, xytext=(-58, 8), textcoords="offset points", fontsize=9)
+ax.annotate(f"$z_2 = {z2:.2f}$", x2_opt, xytext=(8, 6), textcoords="offset points", fontsize=9)
+ax.set_title("Branch: two child LPs")
+ax = axes[1]
+cutP = clip_halfplane(V, ALPHA, BETA)
+shade_polygon(ax, cutP, COLORS["hull"], alpha=0.2)
+mark_point(ax, xc_opt, COLORS["hull"])
+ax.annotate(f"$z = {zc:.2f}$", xc_opt, xytext=(-50, 8), textcoords="offset points", fontsize=9)
+ax.set_title("Cut: one LP, $P$ + cut")
+for ax in axes:
+    ax.scatter(*PTS.T, color="black", s=14, zorder=4)
+    mark_point(ax, XHAT, COLORS["weak"], size=40)
+fig.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: tbl-branch-vs-cut
+#| tbl-cap: "Upper bounds on $\\max x_2$ (smaller is tighter). The integer optimum is 3."
+_, z_lp = lp_max_x2(A, b)
+Markdown(
+    "| Method | Bound |\n|---|---:|\n"
+    f"| LP relaxation | {z_lp:.2f} |\n"
+    f"| Branch on $x_1$: $\\max(z_1, z_2)$ | {max(z1, z2):.2f} |\n"
+    f"| LP + one disjunctive cut | {zc:.2f} |\n"
+    f"| Integer optimum | {PTS[:, 1].max():.2f} |"
+)
+```
+
+### So why use cuts at all?
+
+- **They stay global.** What a branch learns lives only in its subtree. A cut keeps it in
+  the root LP, so every other node benefits too.
+- **The tree doesn't blow up.** Branching on many variables multiplies the number of
+  nodes. With cuts, the work goes into one LP of fixed size. The price: the convex hull
+  is weaker than keeping the pieces apart, because it still contains fractional points
+  "between" the two sides.
+- **Cuts can build on cuts.** A new cut can be generated with earlier cuts already in
+  the LP. For 0–1 problems, repeating this one variable at a time eventually yields the
+  integer hull — *sequential convexification*, shown on the
+  [Lift-and-Project Cuts](lift-and-project.qmd) page.
+
+In practice the two are used together: cuts shrink the tree, and branching closes
+whatever gap the cuts leave.
+
+## Further reading
+
+- @balas1998 — validity via Farkas multipliers and the convex hull of a disjunctive
+  program ([paper notes](papers/balas-1998.qmd)).
+- @balas1993 — the cut-generating LP for 0–1 programs, with computational results.

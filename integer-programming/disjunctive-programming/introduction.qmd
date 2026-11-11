@@ -1,0 +1,157 @@
+---
+kind: topic
+title: "What Is Disjunctive Programming?"
+description: "Optimization with OR constraints: how to write them, and why integrality is itself a disjunction."
+categories: [foundations, modelling]
+order: 1
+level: intro
+prerequisites: "Linear programming; what a polyhedron is"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from _lib.orplot import (new_axes, shade_polygon, convex_hull, clip_halfplane,
+                         lattice_points, mark_point, COLORS)
+```
+
+## The idea
+
+A linear program asks for a point that satisfies a list of constraints, *all* of them
+together: constraint 1 **and** constraint 2 **and** … A **disjunctive program** also allows
+**or**:
+
+> satisfy *this* block of constraints, **or** *that* block.
+
+The idea is due to Egon Balas, who studied it from the 1970s on and described it as
+linear programming with disjunctive constraints [@balas1979; @balas1998]. ORs show up
+all the time in modelling:
+
+- **Scheduling.** Two jobs share a machine: job $j$ finishes before $k$ starts, **or**
+  $k$ finishes before $j$ starts.
+- **On/off decisions.** A plant is closed (output $=0$) **or** open with output between a
+  minimum and a maximum.
+- **Integrality.** An integer variable that is currently $2.6$ must end up $\le 2$ **or**
+  $\ge 3$. More on this below — it's the reason disjunctive programming matters so much for
+  integer programming.
+
+```{python}
+#| label: fig-scheduling
+#| fig-cap: "Two jobs on one machine, with start times $s_j, s_k \\in [0,10]$ and processing times $p_j = 3$, $p_k = 2$. The feasible set is two separate pieces, one for each order. Points in the band between them would make the jobs overlap."
+fig, ax = new_axes(1, size=4.4)
+box = [(0, 0), (10, 0), (10, 10), (0, 10)]
+j_first = clip_halfplane(box, (1, -1), -3)   # s_j + 3 <= s_k
+k_first = clip_halfplane(box, (-1, 1), -2)   # s_k + 2 <= s_j
+shade_polygon(ax, j_first, COLORS["p1"], label="$j$ before $k$")
+shade_polygon(ax, k_first, COLORS["p2"], label="$k$ before $j$")
+ax.set_xlabel("$s_j$ (start of job $j$)")
+ax.set_ylabel("$s_k$ (start of job $k$)")
+ax.text(5.6, 4.4, "overlap:\ninfeasible", ha="center", va="center", rotation=45,
+        fontsize=10, color=COLORS["text"])
+ax.legend(loc="upper left")
+plt.show()
+```
+
+In every case the feasible set is a **union** of polyhedra, and a union of polyhedra is
+usually not convex. That's why a plain LP can't express it.
+
+## How the OR is written
+
+### Disjunctive normal form
+
+Give each alternative ("term") its own polyhedron
+$P_k = \{x : A^k x \le b^k\}$. The problem is
+
+$$
+\min\; c^\top x \quad \text{s.t.} \quad x \in \bigcup_{k=1}^{K} P_k,
+\qquad\text{also written}\qquad
+\bigvee_{k=1}^{K} \left[ A^k x \le b^k \right].
+$$
+
+The symbol $\lor$ is logical OR: at least one term must hold. This is called
+**disjunctive normal form** (DNF): one big OR of blocks, where each block is an ordinary
+AND of linear inequalities.
+
+Real models usually have *several* disjunctions joined by AND: machine 1's ordering
+**and** machine 2's ordering **and** … You can always multiply them out into a single DNF,
+but the number of terms multiplies too. With $n$ binary variables, each one an OR of two
+terms, the DNF has $2^n$ terms. Much of the theory is about avoiding that blow-up by
+handling **one disjunction at a time**
+(see [Lift-and-Project Cuts](lift-and-project.qmd)).
+
+### Turning the OR into something a solver accepts
+
+A MILP solver doesn't understand $\lor$. There are two standard ways to encode it with
+binary variables: **big-M** and the **hull (extended) formulation**. Both are exact, but
+their LP relaxations differ a lot. The page
+[Big-M vs. the Convex Hull](big-m-vs-hull.qmd) covers them in detail.
+
+## Integrality is a disjunction
+
+This is the bridge to integer programming. Suppose $x_1$ must be an integer and the LP
+relaxation returns $\hat x_1 = 2.6$. Every integer solution satisfies
+
+$$
+x_1 \le 2 \quad \lor \quad x_1 \ge 3 ,
+$$
+
+because no integer lies strictly between 2 and 3. Throwing away the open slab
+$2 < x_1 < 3$ loses **no integer point**, but it does remove $\hat x$.
+
+```{python}
+#| label: fig-split
+#| fig-cap: "Left: the LP relaxation $P$ (grey), its integer points, and the fractional LP optimum $\\hat x$ (red) inside the slab $2 < x_1 < 3$. Right: the two pieces of the split, $P \\cap \\{x_1 \\le 2\\}$ (blue) and $P \\cap \\{x_1 \\ge 3\\}$ (orange). Their convex hull (green) keeps every integer point but no longer contains $\\hat x$."
+V = [(0.6, 0.6), (4.4, 1.2), (2.6, 3.7), (0.7, 2.8)]
+pts = lattice_points(V, (0, 5), (0, 5))
+xhat = (2.6, 3.7)
+P1 = clip_halfplane(V, (1, 0), 2)       # x1 <= 2
+P2 = clip_halfplane(V, (-1, 0), -3)     # x1 >= 3
+fig, axes = new_axes(2, xlim=(0, 5), ylim=(0, 4.5), size=4.2)
+ax = axes[0]
+shade_polygon(ax, V, "#888888", alpha=0.2)
+ax.axvspan(2, 3, color=COLORS["weak"], alpha=0.12, lw=0)
+ax.text(2.5, 0.25, "removed\nslab", ha="center", fontsize=9, color=COLORS["weak"])
+ax.set_title("LP relaxation $P$")
+ax = axes[1]
+shade_polygon(ax, convex_hull(P1 + P2), COLORS["hull"], alpha=0.12)
+shade_polygon(ax, P1, COLORS["p1"])
+shade_polygon(ax, P2, COLORS["p2"])
+ax.set_title(r"Hull of the two pieces", fontsize=12)
+for ax in axes:
+    ax.scatter(*pts.T, color="black", s=16, zorder=4)
+    mark_point(ax, xhat, COLORS["weak"])
+    ax.annotate(r"$\hat x$", xhat, xytext=(6, 4), textcoords="offset points")
+fig.tight_layout()
+plt.show()
+```
+
+A two-term disjunction of this kind is called a **split disjunction**. In general it uses
+any integer vector $\pi$ and integer $\pi_0$:
+
+$$
+\pi^\top x \le \pi_0 \quad \lor \quad \pi^\top x \ge \pi_0 + 1 .
+$$
+
+If $\pi$ only has nonzeros on integer variables, $\pi^\top x$ is an integer at every
+feasible point, so again no feasible point is lost [@cook1990]. Splits on a single
+variable ($\pi = e_j$) are the simplest case, and the one branch-and-bound uses.
+
+For a **binary** variable the split is $x_j \le 0 \lor x_j \ge 1$, which together with
+$0 \le x_j \le 1$ is the same as $x_j = 0 \lor x_j = 1$.
+
+::: {.callout-note}
+## So what does disjunctive programming give integer programming?
+Once integrality is written as disjunctions, all the disjunctive machinery applies:
+convex hulls of unions, the hull formulation, and cuts derived from them. The next pages
+build on exactly this.
+:::
+
+## Where to go next
+
+1. [Big-M vs. the Convex Hull](big-m-vs-hull.qmd) — the two ways to encode an OR, and
+   why the hull formulation gives the tightest possible relaxation.
+2. [Solving Disjunctive Programs](solving.qmd) — branch-and-bound, disjunctive cuts, the
+   cut-generating LP, and how cuts relate to branching.
+3. [Lift-and-Project Cuts](lift-and-project.qmd) — what happens when the disjunction is
+   a binary split, worked out on a small example.

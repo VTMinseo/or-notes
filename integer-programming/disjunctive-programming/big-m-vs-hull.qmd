@@ -3,7 +3,7 @@ kind: topic
 title: "Big-M vs. the Convex Hull"
 description: "Two ways to turn an either–or constraint into a MILP, and why one has a much tighter relaxation."
 categories: [formulations, relaxations]
-order: 1
+order: 2
 level: intermediate
 prerequisites: "LP relaxations of mixed-integer programs; convex hulls"
 ---
@@ -147,6 +147,112 @@ If $\lambda_1 = 1$, then $v^1 \in P_1$ and $A_2 v^2 \le 0$, which (for bounded $
 $v^2 = 0$, so $x = v^1 \in P_1$. Both formulations are exact when the binaries are binary.
 **They differ in their LP relaxations**, and that is what drives solver performance.
 
+### Reading the hull formulation: $v^k$ is "$\lambda_k$ times a point of $P_k$"
+
+The hull formulation can look like a trick. It comes from one substitution: dividing a
+constraint by a positive number.
+
+**Step 1 — what we want.** A point of $\mathrm{conv}(P_1 \cup P_2)$ is a weighted average
+of one point from each piece:
+
+$$
+x = \lambda_1 p^1 + \lambda_2 p^2, \qquad p^k \in P_k \;(\text{i.e. } A_k p^k \le b_k),
+\qquad \lambda_1 + \lambda_2 = 1,\; \lambda \ge 0 .
+$$
+
+An LP solver can't take this as written: $\lambda_k p^k$ multiplies two variables, which
+makes it nonlinear.
+
+**Step 2 — rename the product.** Introduce one new variable per term,
+$v^k := \lambda_k p^k$. Now $x = v^1 + v^2$ is linear. It remains to rewrite
+"$p^k \in P_k$" in terms of $v^k$ and $\lambda_k$. If $\lambda_k > 0$, then
+$p^k = v^k / \lambda_k$, and
+
+$$
+A_k p^k \le b_k
+\;\iff\;
+A_k \frac{v^k}{\lambda_k} \le b_k
+\;\iff\;
+A_k v^k \le b_k \lambda_k .
+$$
+
+The last step multiplies both sides by $\lambda_k > 0$, which keeps the direction of the
+inequality. The result is **linear** in $(v^k, \lambda_k)$. It's exactly the constraint in
+the hull formulation. This rewriting is often called **homogenization**.
+
+**Step 3 — read it backwards.** Given any $(v^k, \lambda_k)$ with
+$A_k v^k \le b_k \lambda_k$ and $\lambda_k > 0$, set $p^k := v^k / \lambda_k$. Dividing
+by $\lambda_k$ shows $A_k p^k \le b_k$, so $p^k \in P_k$ and $v^k = \lambda_k p^k$. The
+point of $P_k$ is "hidden" inside $v^k$, and dividing by the weight recovers it.
+
+**Step 4 — the edge case $\lambda_k = 0$.** Now the constraint reads $A_k v^k \le 0$, and
+you can't divide by zero. The vectors with $A_k v \le 0$ are the **recession directions**
+of $P_k$: directions you can move along forever without leaving $P_k$. If $P_k$ is
+bounded, the only such direction is $v = 0$. So a term with zero weight contributes
+nothing, which is what we want. Bounds on the variables (for instance $0 \le x \le 1$)
+make the pieces bounded. If a piece is unbounded, $v^k$ could drift along a recession
+direction even with weight zero, and the formulation describes the *closure* of the
+convex hull [@balas1998].
+
+#### A one-dimensional example
+
+Take $P_1 = [0, 1]$ and $P_2 = [3, 4]$. The union is two intervals with a gap; its convex
+hull is $[0, 4]$. The hull formulation is
+
+$$
+0 \cdot \lambda_1 \le v^1 \le 1 \cdot \lambda_1, \qquad
+3 \lambda_2 \le v^2 \le 4 \lambda_2, \qquad
+x = v^1 + v^2, \qquad \lambda_1 + \lambda_2 = 1,\; \lambda \ge 0 .
+$$
+
+- To reach $x = 2$, which lies in the gap, take $\lambda_1 = \lambda_2 = 0.5$,
+  $v^1 = 0.5$, $v^2 = 1.5$. Dividing out gives $p^1 = 0.5/0.5 = 1 \in P_1$ and
+  $p^2 = 1.5/0.5 = 3 \in P_2$, so $x = 0.5 \cdot 1 + 0.5 \cdot 3$ is the midpoint of
+  1 and 3.
+- With $\lambda_1 = 1, \lambda_2 = 0$, the second block forces $v^2 = 0$ and $x$ ranges
+  over $[0, 1] = P_1$.
+- Letting $\lambda_1$ vary over $[0, 1]$, the reachable values of $x$ fill $[0, 4]$:
+  the convex hull and nothing more.
+
+```{python}
+#| label: fig-lift-1d
+#| fig-cap: "The hull formulation of $[0,1] \\cup [3,4]$, drawn in the lifted $(x, \\lambda_1)$ space. For a fixed weight $\\lambda_1$, the reachable $x$ form the interval $[3 - 3\\lambda_1,\\, 4 - 3\\lambda_1]$ (one horizontal slice). Stacking the slices gives a parallelogram. Its shadow on the $x$-axis — the projection — is exactly $\\mathrm{conv}(P_1 \\cup P_2) = [0, 4]$."
+fig, ax = plt.subplots(figsize=(6.4, 3.6))
+para = [(3, 0), (4, 0), (1, 1), (0, 1)]           # (x, lambda_1)
+shade_polygon(ax, para, COLORS["hull"], alpha=0.18)
+# slice at lambda_1 = 0.5
+ax.plot([1.5, 2.5], [0.5, 0.5], color=COLORS["hull"], lw=3)
+ax.annotate(r"slice $\lambda_1 = 0.5$: $x \in [1.5,\, 2.5]$", (2.5, 0.5),
+            xytext=(2.85, 0.62), fontsize=9)
+mark_point(ax, (2, 0.5), COLORS["weak"])
+ax.annotate("$x = 2$", (2, 0.5), xytext=(-12, -20), textcoords="offset points",
+            fontsize=9)
+# the pieces at lambda_1 = 1 and 0
+ax.plot([0, 1], [1, 1], color=COLORS["p1"], lw=4, solid_capstyle="butt")
+ax.plot([3, 4], [0, 0], color=COLORS["p2"], lw=4, solid_capstyle="butt")
+ax.text(0.5, 1.07, r"$\lambda_1 = 1$: $P_1$", ha="center", fontsize=9, color=COLORS["p1"])
+ax.text(4.12, 0.0, r"$\lambda_1 = 0$: $P_2$", va="center", fontsize=9, color=COLORS["p2"])
+# projection onto the x-axis
+y0 = -0.22
+ax.plot([0, 4], [y0, y0], color=COLORS["hull"], lw=5, solid_capstyle="butt")
+ax.plot([0, 1], [y0, y0], color=COLORS["p1"], lw=5, solid_capstyle="butt")
+ax.plot([3, 4], [y0, y0], color=COLORS["p2"], lw=5, solid_capstyle="butt")
+ax.text(4.15, y0, r"projection $= [0, 4]$", va="center", fontsize=9)
+for xv in (0, 4):
+    ax.plot([xv, xv], [y0, 1 if xv == 0 else 0], ls=":", color=COLORS["text"], lw=0.8)
+ax.set_xlim(-0.3, 5.6)
+ax.set_ylim(-0.35, 1.2)
+ax.set_xlabel("$x$")
+ax.set_ylabel(r"weight $\lambda_1$")
+ax.set_yticks([0, 0.5, 1])
+ax.spines["left"].set_bounds(0, 1)
+plt.show()
+```
+
+This "go up to a bigger space, describe the set linearly there, then project back down"
+pattern is called **lift-and-project**. It's the same idea behind the cuts on the
+[Lift-and-Project Cuts](lift-and-project.qmd) page.
+
 ## Comparing the relaxations
 
 Relax the binaries to $[0,1]$ and project onto the $x$-space. The figure below shows the
@@ -248,5 +354,9 @@ doing it for each binary in turn yields the integer hull after $n$ steps
 
 ## Further reading
 
+- [What Is Disjunctive Programming?](introduction.qmd) — the basics, and integrality as a
+  disjunction.
+- [Solving Disjunctive Programs](solving.qmd) — how the hull formulation turns into
+  cutting planes.
 - [Balas (1998) — paper notes](papers/balas-1998.qmd)
 - @balas2018 — book-length treatment by the originator of the field.
