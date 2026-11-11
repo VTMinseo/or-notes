@@ -1,0 +1,32 @@
+---
+kind: paper
+title: "Author (Year): Short Title"
+author: "Full Author Names"
+year: 2000
+description: "One sentence: what this paper is known for."
+categories: [paper, tag]
+paper-doi: "10.xxxx/xxxxx"
+---
+
+::: {.paper-ref}
+Authors, "Full title," *Venue* vol(issue), pages, year.
+[doi:10.xxxx/xxxxx](https://doi.org/10.xxxx/xxxxx) [@bibkey]
+:::
+
+## Context
+
+What problem the paper addressed and what came before it.
+
+## Main contributions
+
+**1. ...**
+
+**2. ...**
+
+## Why it matters
+
+What it changed; what was built on it.
+
+## Read next
+
+- [Related topic page](../topic.qmd)

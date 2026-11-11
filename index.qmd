@@ -1,0 +1,26 @@
+---
+title: "OR Notes"
+subtitle: "Operations Research, one picture at a time"
+toc: false
+listing:
+  id: categories
+  contents: "**/*.qmd"
+  include:
+    kind: category
+  type: grid
+  grid-columns: 3
+  sort: "order"
+  fields: [title, description]
+---
+
+Short, self-contained notes on topics in Operations Research.
+Each page states the idea, gives the math, and draws a picture of it.
+Where a paper introduced an idea, it gets its own page too.
+
+Pages are organized as **category → subcategory → topic → paper**.
+Use the sidebar, the cards below, or the search box.
+
+## Categories
+
+::: {#categories}
+:::

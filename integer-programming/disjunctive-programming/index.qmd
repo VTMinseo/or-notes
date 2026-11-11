@@ -1,0 +1,39 @@
+---
+kind: subcategory
+title: "Disjunctive Programming"
+description: "Optimizing over unions of polyhedra: either–or constraints, big-M, and the convex hull."
+order: 1
+toc: false
+listing:
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "order"
+    fields: [title, description, categories]
+  - id: papers
+    contents: "**/*.qmd"
+    include:
+      kind: paper
+    type: table
+    sort: "year"
+    fields: [title, author, year]
+    field-display-names:
+      author: "Authors"
+      year: "Year"
+---
+
+A **disjunctive program** is an optimization problem whose feasible region is a union
+of polyhedra — "satisfy *these* constraints **or** *those* ones." Integer programs are a
+special case: $x_j \in \{0,1\}$ is the disjunction $x_j = 0 \;\lor\; x_j = 1$.
+
+## Topics
+
+::: {#topics}
+:::
+
+## Papers
+
+::: {#papers}
+:::

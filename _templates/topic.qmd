@@ -1,0 +1,50 @@
+---
+kind: topic
+title: "TOPIC TITLE"
+description: "One sentence: what the reader will understand after this page."
+categories: [tag1, tag2]          # free-form tags, shown in listings
+order: 99                         # position inside its folder (lower = first)
+level: intro                      # intro | intermediate | advanced
+prerequisites: "What the reader should already know"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from _lib.orplot import new_axes, shade_polygon, convex_hull, mark_point, COLORS
+```
+
+## The idea
+
+Plain-language statement of the problem / concept, with a small example.
+
+```{python}
+#| label: fig-main
+#| fig-cap: "Caption that states what the reader should notice."
+fig, ax = new_axes(1)
+# ... draw ...
+plt.show()
+```
+
+## The math
+
+Formulation(s), definitions, the key result.
+
+## Why it works
+
+Proof sketch, possibly in a collapsed callout:
+
+::: {.callout-tip collapse="true"}
+## Proof sketch
+...
+:::
+
+## In practice
+
+Trade-offs, rules of thumb, where it shows up.
+
+## Further reading
+
+- [Paper notes](papers/AUTHOR-YEAR.qmd)
+- @bibkey

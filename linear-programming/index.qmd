@@ -1,0 +1,32 @@
+---
+kind: category
+title: "Linear Programming"
+description: "Polyhedra, duality, the simplex method, and sensitivity analysis."
+order: 1
+toc: false
+listing:
+  - id: subcats
+    contents: "**/*.qmd"
+    include:
+      kind: subcategory
+    type: table
+    sort: "order"
+    fields: [title, description]
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "title"
+    fields: [title, description, categories]
+---
+
+## Subcategories
+
+::: {#subcats}
+:::
+
+## All topics in this category
+
+::: {#topics}
+:::

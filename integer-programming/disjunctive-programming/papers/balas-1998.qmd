@@ -1,0 +1,56 @@
+---
+kind: paper
+title: "Balas (1998): Properties of the Convex Hull of Feasible Points"
+author: "Egon Balas"
+year: 1998
+description: "The paper that characterizes the convex hull of a disjunctive program."
+categories: [paper, convex hull, lift-and-project]
+paper-doi: "10.1016/S0166-218X(98)00136-X"
+---
+
+::: {.paper-ref}
+E. Balas, "Disjunctive programming: Properties of the convex hull of feasible points,"
+*Discrete Applied Mathematics* 89(1–3), 3–44, 1998.
+[doi:10.1016/S0166-218X(98)00136-X](https://doi.org/10.1016/S0166-218X(98)00136-X)
+[@balas1998]
+:::
+
+## Context
+
+The main results first appeared in a 1974 Carnegie Mellon technical report and were
+published as an invited paper in 1998.
+The paper treats *disjunctive programs*: linear programs with logical
+("or") conditions on the constraints. Pure and mixed 0–1 programs are a special case.
+
+## Main contributions
+
+**1. Two descriptions of the convex hull.**
+
+- An **extended (lifted) description** that adds one copy of the variables per term of the
+  disjunction. This is the hull formulation explained in
+  [Big-M vs. the Convex Hull](../big-m-vs-hull.qmd). It gives an LP whose projection is the
+  convex hull, so a disjunctive program can be solved as one (possibly large) LP.
+- A description in the **original variables**, in terms of the facets of the hull.
+
+**2. Valid inequalities and facets.** Every valid inequality for the disjunctive set can be
+derived from the disjuncts with suitable multipliers. The paper gives necessary and
+sufficient conditions for such an inequality to define a facet. This is the theoretical
+basis for **disjunctive cuts**.
+
+**3. Sequential convexification.** For a class of problems called *facial* disjunctive
+programs, which includes 0–1 programs, the convex hull with respect to $n$ disjunctions can
+be built one disjunction at a time, in $n$ steps. Each step only needs the hull of a single
+disjunction. This idea later became **lift-and-project**.
+
+## Why it matters
+
+- It explains *why* some MILP formulations are stronger than others: they are closer to
+  the hull formulation.
+- Lift-and-project and split cuts, standard in modern MILP solvers, trace back to these
+  results.
+- Generalized disjunctive programming [@raman1994] builds a modelling framework on top of it.
+
+## Read next
+
+- [Big-M vs. the Convex Hull](../big-m-vs-hull.qmd): the main construction with figures.
+- @balas2018: the author's book on the subject.

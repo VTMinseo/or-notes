@@ -1,0 +1,12 @@
+---
+title: "About"
+toc: false
+---
+
+These are notes I keep on topics in Operations Research that I found interesting,
+written so that anyone can learn from them. Everything here is free to read and share
+under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+**How pages are written.** Drafts are produced with the help of Claude (an AI assistant)
+and then reviewed. Figures are generated from code that sits next to the text, so they can
+be checked and reproduced. If you spot an error, please open an issue on GitHub.

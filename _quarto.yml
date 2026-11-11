@@ -1,0 +1,51 @@
+project:
+  type: website
+  output-dir: _site
+  execute-dir: project          # figure code can `from _lib.orplot import ...`
+  render:                       # only .qmd files become pages (README/CLAUDE.md stay out)
+    - "*.qmd"
+    - "**/*.qmd"
+
+website:
+  title: "OR Notes"
+  description: "Free, open notes on Operations Research — with figures."
+  page-navigation: true         # prev / next links at the bottom of each page
+  bread-crumbs: true
+  search: true
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+      - href: about.qmd
+        text: About
+    right:
+      - icon: github
+        href: https://github.com/VTMinseo/or-notes
+  sidebar:
+    style: docked
+    collapse-level: 1           # categories start folded; open as you browse
+    contents: auto              # sidebar is built from the folder tree
+  page-footer:
+    center: "Free to read and share · CC BY 4.0"
+
+bibliography: references.bib
+link-citations: true
+
+execute:
+  freeze: auto                  # only re-run figure code when a page changes
+  echo: false                   # readers see figures, not plotting code
+  warning: false
+
+format:
+  html:
+    theme:
+      light: [cosmo, _lib/style.scss]
+      dark: [darkly, _lib/style.scss]
+    toc: true
+    toc-depth: 3
+    number-sections: false
+    html-math-method: katex
+    fig-align: center
+    code-fold: true             # if a page sets echo: true, code starts folded
+    code-summary: "Show the code for this figure"
+    callout-appearance: simple
