@@ -1,4 +1,4 @@
-# Authoring guide for OR Notes
+# Authoring guide for OR Free Education
 
 This repo is a Quarto website of Operations Research notes. Pages are written mostly by
 Claude and reviewed by the owner. Follow these conventions so new pages slot in cleanly.

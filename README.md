@@ -1,4 +1,4 @@
-# OR Notes
+# OR Free Education
 
 Free, open notes on Operations Research, with figures. Built with [Quarto](https://quarto.org)
 and published with GitHub Pages.

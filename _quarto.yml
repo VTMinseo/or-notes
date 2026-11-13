@@ -7,7 +7,7 @@ project:
     - "**/*.qmd"
 
 website:
-  title: "OR Notes"
+  title: "OR Free Education"
   description: "Free, open notes on Operations Research — with figures."
   page-navigation: true         # prev / next links at the bottom of each page
   bread-crumbs: true

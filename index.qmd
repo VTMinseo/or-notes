@@ -1,5 +1,5 @@
 ---
-title: "OR Notes"
+title: "OR Free Education"
 subtitle: "Operations Research, one picture at a time"
 toc: false
 listing:
