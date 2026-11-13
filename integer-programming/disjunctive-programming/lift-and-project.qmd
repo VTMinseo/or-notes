@@ -292,8 +292,8 @@ Jeroslow [@balasjeroslow1980], which Balas, Ceria and Cornuéjols apply to
 lift-and-project cuts [@balas1993].
 
 **The link to Gomory cuts.** Balas and Perregaard showed a precise correspondence between
-lift-and-project cuts, simple disjunctive (intersection) cuts, and Gomory mixed-integer
-cuts for 0–1 programs [@balas2003]. In particular, a strengthened lift-and-project cut from
+lift-and-project cuts, simple disjunctive (intersection) cuts, and the mixed-integer
+cuts of Gomory [@gomory1960] for 0–1 programs [@balas2003]. In particular, a strengthened lift-and-project cut from
 $x_k \le 0 \lor x_k \ge 1$ matches a Gomory mixed-integer cut from a suitable simplex
 tableau row. They also used it to solve the CGLP by pivoting in the original LP's tableau
 instead of building the larger LP.
@@ -303,7 +303,9 @@ instead of building the larger LP.
 Let $\pi$ be an integer vector and suppose $\pi^\top x < \pi_0 + 1$ for every $x \in P$.
 Then the side $\pi^\top x \ge \pi_0 + 1$ of the split is **empty**, the hull of the union
 is just $P \cap \{\pi^\top x \le \pi_0\}$, and the split gives the cut
-$\pi^\top x \le \pi_0$. That is exactly a Chvátal–Gomory cut. Split cuts were studied in
+$\pi^\top x \le \pi_0$. That is exactly a Chvátal–Gomory cut, the cut family that
+grew out of Gomory's cutting-plane algorithm [@gomory1958] and Chvátal's closure
+[@chvatal1973]. Split cuts were studied in
 this generality by Cook, Kannan and Schrijver [@cook1990].
 :::
 

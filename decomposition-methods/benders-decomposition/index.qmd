@@ -1,0 +1,42 @@
+---
+kind: subcategory
+title: "Benders Decomposition"
+description: "Fix the hard variables, solve an easy subproblem, and send back cuts: the master–subproblem loop and its limits."
+order: 1
+toc: false
+listing:
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "order"
+    fields: [title, description, categories]
+  - id: papers
+    contents: "**/*.qmd"
+    include:
+      kind: paper
+    type: table
+    sort: "year"
+    fields: [title, author, year]
+    field-display-names:
+      author: "Authors"
+      year: "Year"
+---
+
+**Benders decomposition** [@benders1962] splits a problem into a *master problem* over
+the "complicating" variables and a *subproblem* that becomes an easy linear program once
+those variables are fixed. The subproblem answers each proposal from the master with a
+cut, and the two take turns until they agree. The method is the basis of the L-shaped
+method in stochastic programming [@vanslyke1969] and was extended beyond linear
+subproblems by @geoffrion1972.
+
+## Topics
+
+::: {#topics}
+:::
+
+## Papers
+
+::: {#papers}
+:::

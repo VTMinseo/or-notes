@@ -1,0 +1,32 @@
+---
+kind: category
+title: "Decomposition Methods"
+description: "Splitting large optimization problems into a master problem and easier subproblems."
+order: 4
+toc: false
+listing:
+  - id: subcats
+    contents: "**/*.qmd"
+    include:
+      kind: subcategory
+    type: table
+    sort: "order"
+    fields: [title, description]
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "title"
+    fields: [title, description, categories]
+---
+
+## Subcategories
+
+::: {#subcats}
+:::
+
+## All topics in this category
+
+::: {#topics}
+:::

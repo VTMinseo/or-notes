@@ -78,7 +78,8 @@ solution methods. Solvers usually combine them.
 
 **(a) Reformulate, then branch-and-bound.** Encode each disjunction with binary variables,
 using [big-M or the hull formulation](big-m-vs-hull.qmd), and hand the resulting MILP to a
-solver. Big-M models are smaller with weaker bounds; hull models are larger with tighter
+solver, which runs LP-based branch-and-bound, the method introduced by Land and Doig
+[@land1960]. Big-M models are smaller with weaker bounds; hull models are larger with tighter
 bounds. *Generalized disjunctive programming* (GDP), developed by Grossmann and
 co-authors, mostly works this way: the modeller writes the logic, then picks a
 reformulation for each disjunction [@raman1994].
@@ -97,7 +98,8 @@ union of the pieces but cut off the current fractional point:
    that is valid for $P_1 \cup P_2$ and violated by $\hat x$.
 4. Add the cut and repeat.
 
-In practice (b) and (c) run together as **branch-and-cut**. The rest of this page explains
+In practice (b) and (c) run together as **branch-and-cut**, a name and design that go back
+to Padberg and Rinaldi's work on the traveling salesman problem [@padberg1991]. The rest of this page explains
 step 3, then how a cut relates to a branch.
 
 ## The cut-generating LP
@@ -108,7 +110,8 @@ An inequality holds on $P_1 \cup P_2$ exactly when it holds on $P_1$ **and** on 
 (It is then also valid on $\mathrm{conv}(P_1 \cup P_2)$, since the set of points satisfying
 a linear inequality is convex.)
 
-For a single nonempty polyhedron $P_k = \{x : A_k x \le b_k\}$, Farkas' lemma tells us
+For a single nonempty polyhedron $P_k = \{x : A_k x \le b_k\}$, Farkas' lemma
+[@farkas1902] tells us
 when $\alpha^\top x \le \beta$ is valid: exactly when it can be *derived* from the
 constraints, i.e. there are multipliers $u_k \ge 0$ with
 

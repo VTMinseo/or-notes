@@ -9,9 +9,14 @@ paper-doi: "10.xxxx/xxxxx"
 ---
 
 ::: {.paper-ref}
-Authors, "Full title," *Venue* vol(issue), pages, year.
+**Authors** (Year). "Full title." *Venue* vol(issue), pages.
 [doi:10.xxxx/xxxxx](https://doi.org/10.xxxx/xxxxx) [@bibkey]
+<!-- Preprint: *arXiv preprint* arXiv:XXXX.XXXXXvN [math.OC], version read and date.
+     Link the abstract page https://arxiv.org/abs/XXXX.XXXXX -->
 :::
+
+<!-- Citation standard (see CLAUDE.md): credit every method to its original paper at
+     first mention, with a verified DOI or URL in references.bib. -->
 
 ## Context
 

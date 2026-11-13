@@ -135,7 +135,8 @@ $$
 
 If $\pi$ only has nonzeros on integer variables, $\pi^\top x$ is an integer at every
 feasible point, so again no feasible point is lost [@cook1990]. Splits on a single
-variable ($\pi = e_j$) are the simplest case, and the one branch-and-bound uses.
+variable ($\pi = e_j$) are the simplest case, and the one LP-based branch-and-bound
+[@land1960] uses.
 
 For a **binary** variable the split is $x_j \le 0 \lor x_j \ge 1$, which together with
 $0 \le x_j \le 1$ is the same as $x_j = 0 \lor x_j = 1$.

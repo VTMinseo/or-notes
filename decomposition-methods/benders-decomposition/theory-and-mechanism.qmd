@@ -1,0 +1,368 @@
+---
+kind: topic
+title: "Benders Decomposition: Theory and Mechanism"
+description: "Why fixing the complicating variables turns a hard problem into a master problem plus LP cuts, how the loop works, and where classical Benders cuts fall short."
+categories: [decomposition, cutting planes, mixed-integer programming]
+order: 1
+level: intermediate
+prerequisites: "LP duality; extreme points and extreme rays of a polyhedron; cutting planes"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from IPython.display import Markdown
+from _lib.orplot import shade_polygon, convex_hull, mark_point, COLORS
+from _lib.toy_benders import (C, XL, XU, PIECES, X_INT, f, classic_benders,
+                              integer_optimum, master_lp)
+
+LOG = classic_benders()
+X_LP, T_LP, LB_LP = LOG[-1]["x"], LOG[-1]["t"], LOG[-1]["lb"]
+X_IP, Z_IP = integer_optimum()
+XS = np.linspace(XL, XU, 400)
+FX = np.array([f(x) for x in XS])
+T_TOP = 10.5
+
+def cut_label(a, g):
+    if g == 0:
+        return f"$t \\geq {a:g}$"
+    return f"$t \\geq {a:g} - {g:g}x$" if g != 1 else f"$t \\geq {a:g} - x$"
+
+def axes_xt(ax):
+    ax.set_xlim(XL - 0.2, XU + 0.2); ax.set_ylim(-0.6, T_TOP)
+    ax.set_xlabel("$x$"); ax.set_ylabel("$t$")
+    ax.grid(True, color=COLORS["grid"], lw=0.5, alpha=0.5)
+```
+
+## The idea
+
+Many large optimization models have a few **complicating variables** that, once fixed,
+leave behind a problem that is easy to solve. In facility location, deciding *which*
+facilities to open is hard (it is a discrete choice), but once that is fixed, assigning
+customers to the open facilities is just a linear program. In two-stage stochastic
+programming, once the here-and-now decision is fixed, each scenario's recourse problem
+is a separate LP.
+
+@benders1962 turned this observation into an algorithm. Instead of solving everything
+at once, keep only the complicating variables $x$ in a **master problem** and replace the
+rest by a single number $t$ that stands for "the cost of the easy part". The master does
+not know that cost function exactly. It learns it a piece at a time from a
+**subproblem**, which, given a proposed $x$, solves the easy LP and answers with a
+**cut**, a linear inequality that tells the master what it got wrong. LP duality is what
+makes these cuts exact.
+
+## The problem and its subproblem
+
+We use the notation of @fang2026. The problem is a mixed-integer linear program
+
+$$
+\min_{x,\,y}\; c^\top x + d^\top y
+\quad\text{s.t.}\quad A x + B y \ge b,\qquad x \in X,
+$$
+
+where $X$ collects the bounds, the remaining constraints on $x$, and the integrality
+requirements. The $y$ variables are continuous. Fixing $x = \hat x$ leaves the
+**subproblem**
+
+$$
+f(\hat x) \;=\; \min_{y}\,\{\, d^\top y \;:\; B y \ge b - A\hat x \,\},
+$$
+
+a plain LP whose optimal value $f(\hat x)$ is the cost of the easy part for that choice
+of $x$ ($f(\hat x) = +\infty$ if it is infeasible). The function $f$ is the
+**value function** of the subproblem, and the original problem is simply
+
+$$
+\min_{x \in X}\; c^\top x + f(x).
+$$
+
+## The key result: projecting out $y$ with LP duality
+
+The dual of the subproblem is
+
+$$
+f(\hat x) \;=\; \max_{\pi \in \Pi}\; (b - A\hat x)^\top \pi,
+\qquad
+\Pi = \{\, \pi \ge 0 \;:\; B^\top \pi = d \,\}.
+$$
+
+The crucial observation is that **$\Pi$ does not depend on $\hat x$**; only the objective
+does. So the same finite list of extreme points $J$ and extreme rays $R$ of $\Pi$
+describes the subproblem for every $x$:
+
+- If some extreme ray $\tilde\pi \in R$ has $(b - A\hat x)^\top \tilde\pi > 0$, the dual is
+  unbounded, so the subproblem is **infeasible** at $\hat x$.
+- Otherwise the dual optimum is attained at an extreme point, and
+  $f(\hat x) = \max_{\hat\pi \in J} (b - A\hat x)^\top \hat\pi$.
+
+So $f$ is a maximum of finitely many affine functions: it is **convex and piecewise
+linear**, with one linear piece per dual extreme point. Writing $t \ge f(x)$ gives the
+**Benders reformulation**, an equivalent problem in $(x, t)$ only:
+
+$$
+\begin{aligned}
+\min_{x \in X,\; t}\quad & c^\top x + t \\
+\text{s.t.}\quad & t \ge \hat\pi^\top (b - A x) && \forall\, \hat\pi \in J
+   \qquad \text{(optimality cuts)} \\
+& 0 \ge \tilde\pi^\top (b - A x) && \forall\, \tilde\pi \in R
+   \qquad \text{(feasibility cuts)}.
+\end{aligned}
+$$
+
+Following @fang2026, call the set of $(x, t)$ satisfying all these cuts $L$. It is the
+epigraph of $f$ restricted to the $x$ for which the subproblem is feasible, and the
+problem is $\min\{c^\top x + t : (x,t) \in L,\; x \in X\}$. This equivalence is the
+partitioning theorem of @benders1962.
+
+The reformulation has a catch: $J$ and $R$ can be exponentially large, so the cuts can't
+be written down in advance. Benders decomposition generates them **only when needed**.
+
+::: {.callout-tip collapse="true"}
+## Why every optimality cut is valid (weak duality)
+Take any $\hat\pi \in \Pi$ and any $x$ for which the subproblem is feasible, with optimal
+solution $y^*$. Then $\hat\pi \ge 0$ and $B y^* \ge b - Ax$ give
+$$
+\hat\pi^\top (b - A x) \;\le\; \hat\pi^\top B y^* \;=\; (B^\top \hat\pi)^\top y^* \;=\; d^\top y^* \;=\; f(x).
+$$
+So $t \ge \hat\pi^\top(b - Ax)$ never cuts off a pair $(x, t)$ with $t \ge f(x)$: it is a
+valid underestimator of $f$, and it is *tight* at the point where $\hat\pi$ is
+dual-optimal. Feasibility cuts follow the same way from Farkas' lemma [@farkas1902]:
+if $\tilde\pi \ge 0$, $B^\top\tilde\pi = 0$ and $\tilde\pi^\top(b - Ax) > 0$, then
+$B y \ge b - Ax$ has no solution.
+:::
+
+### A tiny example
+
+Throughout this page we use a one-dimensional problem, small enough to draw:
+
+$$
+\min\; 2.5\,x + f(x), \qquad x \in \{0, 1, 2, 3, 4\},
+\qquad
+f(x) = \min_y \{\, y \;:\; y \ge 9 - 4x,\; y \ge 5 - x,\; y \ge 0 \,\}.
+$$
+
+Here $d = 1$, $B = (1, 1, 1)^\top$ and $b - Ax = (9 - 4x,\; 5 - x,\; 0)^\top$, so
+$\Pi = \{\pi \ge 0 : \pi_1 + \pi_2 + \pi_3 = 1\}$. Its three extreme points are the unit
+vectors, and they give the three optimality cuts $t \ge 9 - 4x$, $t \ge 5 - x$ and
+$t \ge 0$. The subproblem is always feasible, so there are no feasibility cuts.
+
+```{python}
+#| label: fig-value-function
+#| fig-cap: "The value function $f$ of the example (black) is the upper envelope of three affine functions, one per extreme point of the dual feasible region (dashed). The shaded region is $L$, the epigraph of $f$, which the Benders reformulation describes with cuts."
+fig, ax = plt.subplots(figsize=(5.6, 4.0))
+axes_xt(ax)
+shade_polygon(ax, list(zip(XS, FX)) + [(XU, T_TOP), (XL, T_TOP)], "#888888", alpha=0.15, lw=0)
+for (a, g), col in zip(PIECES, [COLORS["p1"], COLORS["p2"], COLORS["hull"]]):
+    ax.plot(XS, a - g * XS, ls="--", color=col, lw=1.4, label=cut_label(a, g))
+ax.plot(XS, FX, color="black", lw=2.2, label="$f(x)$")
+ax.text(3.0, 7.5, "$L$ = epigraph of $f$", fontsize=10)
+ax.legend(loc="upper right", fontsize=9)
+plt.show()
+```
+
+## The algorithm
+
+Start the master problem with a few cuts (or just a lower bound on $t$) and repeat:
+
+1. **Solve the master** with the cuts found so far. Its solution $(\hat x, \hat t)$ is the
+   master's best guess, and its optimal value is a **lower bound** on the true optimum,
+   since the master is a relaxation.
+2. **Solve the subproblem** at $\hat x$ (in practice, its dual):
+   - *infeasible* → add the **feasibility cut** $0 \ge \tilde\pi^\top (b - Ax)$ from the
+     dual ray that proves it;
+   - *$f(\hat x) > \hat t$* → the master underestimated the cost; add the **optimality
+     cut** $t \ge \hat\pi^\top(b - Ax)$ from the optimal dual solution $\hat\pi$;
+   - *$f(\hat x) \le \hat t$* → $(\hat x, \hat t) \in L$; the master's guess is correct and
+     it is optimal for the current master problem. Stop.
+3. Each feasible $\hat x$ also gives an **upper bound** $c^\top \hat x + f(\hat x)$.
+
+Because each cut comes from one of finitely many extreme points or rays, and a cut once
+added is never violated again, the loop ends after finitely many iterations
+[@benders1962]. The figure runs it on the continuous relaxation $0 \le x \le 4$ of the
+example, starting from the trivial cut $t \ge 0$.
+
+```{python}
+#| label: fig-benders-loop
+#| fig-cap: "Classical Benders decomposition on the LP relaxation of the example. In each panel: the true value function $f$ (grey), the master's current approximation, the upper envelope of the cuts found so far (blue), the master solution $(\\hat x, \\hat t)$ (red), and the subproblem's answer $f(\\hat x)$ (black). The dashed line is the cut the subproblem returns. In the last panel the master's point lies on $f$, so the loop stops."
+n = len(LOG)
+fig, axes = plt.subplots(1, n, figsize=(3.6 * n, 3.6), sharey=True)
+for ax, it in zip(axes, LOG):
+    axes_xt(ax)
+    ax.plot(XS, FX, color="#999999", lw=2.0)
+    env = np.max([[a - g * x for x in XS] for a, g in it["cuts"]], axis=0)
+    ax.plot(XS, env, color=COLORS["p1"], lw=2.0)
+    if it["new_cut"] is not None:
+        a, g = it["new_cut"]
+        ax.plot(XS, a - g * XS, ls="--", color="black", lw=1.2)
+        ax.plot([it["x"], it["x"]], [it["t"], it["fx"]], color=COLORS["weak"], lw=1, ls=":")
+        mark_point(ax, (it["x"], it["fx"]), "black", size=35)
+    mark_point(ax, (it["x"], it["t"]), COLORS["weak"], size=55)
+    title = f"Iteration {it['k'] + 1}"
+    title += f"\nadd {cut_label(*it['new_cut'])}" if it["new_cut"] else "\n$(\\hat x,\\hat t) \\in L$: stop"
+    ax.set_title(title, fontsize=10)
+fig.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: tbl-benders-loop
+#| tbl-cap: "Iterations of the loop. The lower bound is the master's optimal value; the upper bound is the best $2.5\\,\\hat x + f(\\hat x)$ seen so far."
+rows = []
+for it in LOG:
+    cut = cut_label(*it["new_cut"]) if it["new_cut"] else "— (stop)"
+    rows.append(f"| {it['k'] + 1} | {it['x']:.3f} | {it['t'] + 0.0:.3f} | {it['fx']:.3f} | "
+                f"{it['lb']:.3f} | {it['ub']:.3f} | {cut} |")
+Markdown("| Iteration | $\\hat x$ | $\\hat t$ | $f(\\hat x)$ | Lower bound | Upper bound | Cut added |\n"
+         "|---:|---:|---:|---:|---:|---:|---|\n" + "\n".join(rows))
+```
+
+The cut added in iteration 1 is exact where it was generated ($t = f(0) = 9$ at $x = 0$)
+and remains a valid underestimate everywhere else. After two cuts the master already
+"knows" every piece of $f$ that matters, and the bounds meet at
+`{python} f"{LB_LP:.2f}"`, the optimum of the **LP relaxation**, at the fractional point
+$\hat x = 4/3$.
+
+## Benders decomposition for mixed-integer programs
+
+When $x$ must be integer, the master is a MILP, and there are two standard ways to
+organize the loop. @fang2026 call them **BendersSeq** and **BendersBnB**:
+
+- **BendersSeq** — the original scheme of @benders1962: solve the master MILP to
+  optimality, call the subproblem, add a cut, and solve the master MILP again. It is
+  simple, but every iteration solves a MILP from scratch.
+- **BendersBnB (branch-and-Benders-cut)** — build a *single* branch-and-bound tree
+  [@land1960] for the master and add Benders cuts as lazy constraints whenever the tree
+  finds an integer candidate (and, optionally, at fractional nodes). This avoids
+  re-solving the master and is usually much faster on large problems
+  [@fortz2009; @fischetti2017; see the survey @rahmaniani2017].
+
+Two structural variants are worth knowing:
+
+- In **two-stage stochastic programming**, the subproblem separates into one LP per
+  scenario. Benders decomposition there is known as the **L-shaped method**
+  [@vanslyke1969]. Adding one cut per scenario instead of a single aggregated cut is the
+  **multicut** version [@birge1988].
+- When the subproblem is a convex nonlinear program instead of an LP, LP duality is
+  replaced by nonlinear convex duality: **generalized Benders decomposition**
+  [@geoffrion1972].
+
+### Making it faster
+
+Classical Benders decomposition is famous for being easy to state and hard to make
+fast. Two classical accelerations:
+
+- **Pareto-optimal cuts.** When the subproblem dual has several optimal solutions, they
+  give different cuts, and some dominate others. @magnanti1981 showed how to choose,
+  among the alternative dual optima, a cut that is not dominated.
+- **In-out stabilization.** Instead of separating the master's solution itself, separate
+  a point on the segment between it and an interior "core" point. Early iterations
+  then zigzag less [@benameur2007]. It has been very effective, for example in
+  large-scale facility location [@fischetti2017].
+
+@rahmaniani2017 survey these and many other enhancements.
+
+## Limits of classical Benders cuts {#limits}
+
+The subproblem never sees the integrality of $x$, so every classical Benders cut is a
+valid inequality for $L$, the **continuous** relaxation, and the best it can do is be
+tight for $L$. @fang2026 put this limitation at the center of their paper
+**[Disjunctive Benders Decomposition](papers/fang-2026.qmd)**. What the integer problem
+needs are cuts for the much smaller set
+$\mathrm{conv}\big((X \times \mathbb{R}) \cap L\big)$, the convex hull of the points of $L$
+whose $x$ is integer. When the gap between the two sets is large, classical Benders
+decomposition must rely on branching (BendersBnB) or on enumerating candidates
+(BendersSeq) to close it. @fang2026 conjecture that this is a major cause of the
+familiar **tail-off** of Benders decomposition: fast progress in the first iterations,
+then many iterations that barely improve the bound.
+
+Our example shows the effect in its simplest form. The LP relaxation stops at
+$(\hat x, \hat t) = (4/3,\; 11/3)$, a point **on** the graph of $f$, so it lies in $L$. No
+Benders cut, from any oracle, can ever cut it off. The integer problem, however, only
+uses the points of $L$ above $x \in \{0, 1, 2, 3, 4\}$, and their convex hull (green
+below) is strictly smaller.
+
+```{python}
+#| label: fig-benders-limit
+#| fig-cap: "The limit of Benders cuts. Grey: $L$, the region that classical Benders cuts describe. Green: $\\mathrm{conv}((X \\times \\mathbb{R}) \\cap L)$, the convex hull of the part of $L$ above integer $x$. The LP optimum (red) lies on the boundary of $L$, so no Benders cut can separate it. The dashed line is a cut valid for the green set, obtained from the disjunction $x \\le 1 \\lor x \\ge 2$; it removes the red point and closes the gap. (A one-dimensional analogue of the illustrations in @fang2026.)"
+fig, ax = plt.subplots(figsize=(5.8, 4.2))
+axes_xt(ax)
+shade_polygon(ax, list(zip(XS, FX)) + [(XU, T_TOP), (XL, T_TOP)], "#888888", alpha=0.35, lw=0)
+ax.plot(XS, FX, color="black", lw=1.6)
+int_pts = [(x, f(x)) for x in X_INT]
+hull = convex_hull(int_pts + [(XL, T_TOP), (XU, T_TOP)])
+shade_polygon(ax, hull, COLORS["hull"], alpha=0.30)
+ax.annotate("part of $L$ outside\nthe convex hull", (1.3, 4.05), xytext=(0.15, 1.2),
+            arrowprops=dict(arrowstyle="->", color="#555555"), fontsize=9, color="#555555")
+ax.scatter(*zip(*int_pts), color="black", s=30, zorder=6)
+ax.plot(XS, 7 - 2 * XS, ls="--", color=COLORS["hull"], lw=1.8)
+ax.annotate("disjunctive cut\n$t \\geq 7 - 2x$", (3.1, 0.8), xytext=(3.25, 4.6),
+            arrowprops=dict(arrowstyle="->", color=COLORS["hull"]), color="#2f6b3c", fontsize=9)
+mark_point(ax, (X_LP, T_LP), COLORS["weak"], size=70)
+ax.annotate("LP optimum\n$(4/3,\\ 11/3)$", (X_LP, T_LP), xytext=(1.75, 6.5),
+            arrowprops=dict(arrowstyle="->", color=COLORS["text"]), fontsize=9)
+plt.show()
+```
+
+```{python}
+#| label: tbl-benders-limit
+#| tbl-cap: "Lower bounds for the example. The integer optimum is at $x = 1$."
+(x_c, t_c), lb_cut = master_lp([p for p in PIECES], extra=[(7.0, 2.0)])
+Markdown(
+    "| Relaxation | Lower bound |\n|---|---:|\n"
+    f"| Master with **all** Benders cuts (= LP relaxation) | {LB_LP:.2f} |\n"
+    f"| Same, plus the disjunctive cut $t \\geq 7 - 2x$ | {lb_cut:.2f} |\n"
+    f"| Integer optimum | {Z_IP:.2f} |"
+)
+```
+
+Even with *every* Benders cut, the master's LP relaxation stays at
+`{python} f"{LB_LP:.2f}"`, and only branching on $x$ can close the gap to the integer
+optimum `{python} f"{Z_IP:.2f}"`. A single cut that "knows" $x$ is integer closes it
+immediately. The dashed cut comes from the split $x \le 1 \lor x \ge 2$, exactly the
+kind of [disjunctive cut](../../integer-programming/disjunctive-programming/solving.qmd)
+used in integer programming.
+
+The motivating example in @fang2026 makes the same point at a larger scale. Their
+feasible set is a $51 \times 2$ integer grid with only two feasible points. Both
+BendersSeq and BendersBnB, equipped with a state-of-the-art oracle, end up exploring
+more than a quarter of the grid before proving optimality, while cuts for the convex
+hull would finish almost immediately. (See the
+[paper notes](papers/fang-2026.qmd) for details.)
+
+### Other well-known difficulties
+
+The integrality gap is not the only problem. The survey of @rahmaniani2017 discusses
+others, including:
+
+- **An expensive master.** BendersSeq solves a MILP in every iteration.
+- **Weak or redundant cuts.** Degenerate subproblems have many dual optima. A careless
+  choice gives weak cuts, which is the motivation for Pareto-optimal cuts
+  [@magnanti1981].
+- **Zigzagging.** Early master solutions jump around the domain, which motivates
+  stabilization such as the in-out method [@benameur2007].
+
+### Bringing integrality into the cuts
+
+Several lines of work try to put the integrality of $x$ back into Benders cuts:
+
+- **Mixed-integer rounding** applied to Benders cuts that were already generated
+  [@bodurluedtke2017].
+- **Split cuts** for stochastic integer programs, either in the extended space
+  ("cut-and-project") or in the Benders reformulation ("project-and-cut")
+  [@bodur2017].
+- **Lagrangian cuts**, which add integrality to the subproblem through copies of the
+  master variables [@zou2019; @rahmaniani2020].
+- **Disjunctive Benders decomposition** [@fang2026], which builds cuts valid for
+  $\mathrm{conv}\big((X \times \mathbb{R}) \cap L\big)$ by combining disjunctive
+  programming with existing Benders oracles, without changing the subproblem. See
+  **[the paper notes](papers/fang-2026.qmd)**.
+
+## Further reading
+
+- @benders1962 — the original paper.
+- @rahmaniani2017 — a survey of Benders decomposition and its accelerations.
+- [Fang, Sin & Byeon (2026) — paper notes](papers/fang-2026.qmd) — cuts for the convex
+  hull of the Benders reformulation.
+- [Disjunctive programming](../../integer-programming/disjunctive-programming/introduction.qmd)
+  — the theory behind disjunctive cuts.
