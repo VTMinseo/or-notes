@@ -66,6 +66,19 @@ The site cites its sources the way a research paper would. These rules are not o
 - Code runs with the project root as working directory (`execute-dir: project`).
 - Python dependencies go in `requirements.txt`.
 
+### Interactive figures
+
+- Use Quarto's built-in Observable JS (`{ojs}` cells, with `d3` and `Inputs`); no
+  server is needed. Compute the data in Python and pass it with
+  `ojs_define(name=value)` (JSON-serializable lists/dicts only).
+- The `ojs_define` cell must use `#| echo: false`, **not** `#| include: false`,
+  otherwise the data never reaches the page.
+- One `viewof` input per `{ojs}` cell. Use colors from `COLORS` (pass them through
+  `ojs_define`) and `currentColor` for text, so dark mode works.
+- Keep the static matplotlib version in a collapsed callout ("Static version of this
+  figure (for printing)"). Example: the worked example in
+  `integer-programming/disjunctive-programming/lift-and-project.qmd`.
+
 ## Writing style
 
 - Start with the plain-language idea and a tiny example, then the math, then why it works.

@@ -180,6 +180,189 @@ The LP relaxation only reaches 0.5. We now run the cutting-plane loop: solve the
 on a fractional variable, solve the CGLP, add the cut, repeat.
 
 ```{python}
+#| label: lap-ojs-data
+#| echo: false
+def to_unicode(t):
+    return (t.replace("\\,", "").replace("x_1", "x₁").replace("x_2", "x₂")
+             .replace("\\geq", "≥"))
+
+def clip_line(a, beta, lo=-0.1, hi=1.15):
+    """Endpoints of the line a.x = beta inside the square [lo, hi]^2."""
+    pts = []
+    for xv in (lo, hi):
+        if abs(a[1]) > 1e-12:
+            yv = (beta - a[0] * xv) / a[1]
+            if lo - 1e-9 <= yv <= hi + 1e-9: pts.append((xv, yv))
+    for yv in (lo, hi):
+        if abs(a[0]) > 1e-12:
+            xv = (beta - a[1] * yv) / a[0]
+            if lo - 1e-9 <= xv <= hi + 1e-9: pts.append((xv, yv))
+    pts = sorted(set((round(u, 9), round(v, 9)) for u, v in pts))
+    return [list(pts[0]), list(pts[-1])]
+
+def as_list(V):
+    return [[float(u) + 0.0, float(v) + 0.0] for u, v in V]
+
+lap_data = []
+for k, rd in enumerate(rounds):
+    hull = convex_hull([q for piece in rd["pieces"] for q in piece])
+    a, beta = rd["alpha"], rd["beta"]
+    on_cut = sum(abs(a @ v - beta) < 1e-7 for v in hull)
+    lap_data.append(dict(
+        label=f"Round {k + 1}", final=False,
+        x=[float(v) + 0.0 for v in np.round(rd["x"], 6)], j=int(rd["j"]) + 1,
+        bound=float(C @ rd["x"]),
+        region=as_list(polygon(rd["A"], rd["b"])),
+        pieces=[as_list(pc) for pc in rd["pieces"]],
+        hull=as_list(hull),
+        hull_integral=bool(np.all(np.abs(hull - np.round(hull)) < 1e-7)),
+        cut=clip_line(a, beta), cut_text=to_unicode(cut_text(a, beta)),
+        cut_is_facet=bool(on_cut >= 2),
+    ))
+lap_data.append(dict(label="End", final=True,
+                     x=[float(v) + 0.0 for v in np.round(final_x, 6)],
+                     bound=float(C @ final_x),
+                     region=as_list(polygon(FINAL_A, FINAL_b))))
+ojs_define(lap=lap_data, lapColors=COLORS, lapIntPts=INTEGER_PTS.tolist())
+```
+
+::: {.callout-tip appearance="simple"}
+**Interactive.** Pick a round, then step through it: LP optimum → split → hull → cut.
+Hover over a point to see its coordinates.
+:::
+
+```{ojs}
+//| echo: false
+viewof lapRound = Inputs.radio(d3.range(lap.length), {
+  label: "Round", value: 0, format: i => lap[i].label
+})
+```
+
+```{ojs}
+//| echo: false
+viewof lapStep = Inputs.radio([1, 2, 3, 4], {
+  label: "Step", value: 1,
+  format: s => ["1 · LP optimum", "2 · Split", "3 · Hull", "4 · Cut"][s - 1]
+})
+```
+
+```{ojs}
+//| echo: false
+lapChart = {
+  const R = lap[lapRound], S = R.final ? 4 : lapStep, C = lapColors;
+  const W = 440, H = 420, ml = 44, mb = 40, mt = 12, mr = 12;
+  const x = d3.scaleLinear([-0.1, 1.15], [ml, W - mr]);
+  const y = d3.scaleLinear([-0.1, 1.15], [H - mb, mt]);
+  const svg = d3.create("svg").attr("viewBox", [0, 0, W, H])
+      .style("width", "100%").style("max-width", "480px")
+      .style("font-family", "inherit").style("font-size", "12px");
+  const path = pts => "M" + pts.map(p => `${x(p[0])},${y(p[1])}`).join("L") + "Z";
+
+  // grid and axes
+  for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+    svg.append("line").attr("x1", x(t)).attr("x2", x(t)).attr("y1", y(-0.1)).attr("y2", y(1.15))
+       .attr("stroke", C.grid).attr("stroke-opacity", 0.5).attr("stroke-width", 0.5);
+    svg.append("line").attr("y1", y(t)).attr("y2", y(t)).attr("x1", x(-0.1)).attr("x2", x(1.15))
+       .attr("stroke", C.grid).attr("stroke-opacity", 0.5).attr("stroke-width", 0.5);
+  }
+  svg.append("g").attr("transform", `translate(0,${H - mb})`)
+     .call(d3.axisBottom(x).tickValues([0, 0.5, 1])).attr("font-size", 13);
+  svg.append("g").attr("transform", `translate(${ml},0)`)
+     .call(d3.axisLeft(y).tickValues([0, 0.5, 1])).attr("font-size", 13);
+  svg.append("text").attr("x", (W + ml) / 2).attr("y", H - 6).attr("text-anchor", "middle")
+     .attr("fill", "currentColor").attr("font-size", 15).text("x₁");
+  svg.append("text").attr("x", 12).attr("y", (H - mb) / 2).attr("text-anchor", "middle")
+     .attr("fill", "currentColor").attr("font-size", 15).text("x₂");
+
+  const drawSet = (V, color, alpha) => {
+    if (V.length >= 3) {
+      svg.append("path").attr("d", path(V)).attr("fill", color).attr("fill-opacity", alpha)
+         .attr("stroke", color).attr("stroke-width", 1.6);
+    } else if (V.length === 2) {
+      svg.append("line").attr("x1", x(V[0][0])).attr("y1", y(V[0][1]))
+         .attr("x2", x(V[1][0])).attr("y2", y(V[1][1]))
+         .attr("stroke", color).attr("stroke-width", 7).attr("stroke-linecap", "round");
+    } else if (V.length === 1) {
+      svg.append("circle").attr("cx", x(V[0][0])).attr("cy", y(V[0][1])).attr("r", 9)
+         .attr("fill", color);
+    }
+  };
+
+  if (R.final) {
+    drawSet(R.region, C.hull, 0.3);
+  } else {
+    drawSet(R.region, "#888888", 0.15);
+    if (S >= 3) drawSet(R.hull, C.hull, 0.22);
+    if (S >= 2) {
+      // the removed slab 0 < x_j < 1 and the two pieces
+      const slab = R.j === 1 ? [[0, -0.1], [1, -0.1], [1, 1.15], [0, 1.15]]
+                             : [[-0.1, 0], [1.15, 0], [1.15, 1], [-0.1, 1]];
+      if (S === 2) svg.append("path").attr("d", path(slab)).attr("fill", C.weak)
+                      .attr("fill-opacity", 0.06);
+      drawSet(R.pieces[0], C.p1, 0.35);
+      drawSet(R.pieces[1], C.p2, 0.35);
+    }
+    if (S >= 4) {
+      svg.append("line").attr("x1", x(R.cut[0][0])).attr("y1", y(R.cut[0][1]))
+         .attr("x2", x(R.cut[1][0])).attr("y2", y(R.cut[1][1]))
+         .attr("stroke", "currentColor").attr("stroke-width", 1.6)
+         .attr("stroke-dasharray", "6 4");
+    }
+  }
+  // integer points
+  for (const p of lapIntPts) {
+    svg.append("circle").attr("cx", x(p[0])).attr("cy", y(p[1])).attr("r", 4.5)
+       .attr("fill", "currentColor")
+       .append("title").text(`integer point (${p[0]}, ${p[1]})`);
+  }
+  // LP optimum
+  const fmt = d3.format(".3~f");
+  svg.append("circle").attr("cx", x(R.x[0])).attr("cy", y(R.x[1])).attr("r", 7)
+     .attr("fill", R.final ? C.hull : C.weak).attr("stroke", "white").attr("stroke-width", 1.5)
+     .append("title").text(`LP optimum (${fmt(R.x[0])}, ${fmt(R.x[1])}), value ${fmt(R.bound)}`);
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+lapText = {
+  const R = lap[lapRound], S = R.final ? 4 : lapStep, fmt = d3.format(".3~f");
+  const pt = `(${fmt(R.x[0])}, ${fmt(R.x[1])})`;
+  const box = document.createElement("div");
+  box.style.minHeight = "7.5em";
+  if (R.final) {
+    box.innerHTML = `<p><b>End.</b> The LP optimum ${pt} is integer, with value
+      ${fmt(R.bound)}: the integer optimum. The green region is the final LP
+      relaxation, which is now the integer hull. (The step buttons have no effect here.)</p>`;
+    return box;
+  }
+  const j = R.j, sub = j === 1 ? "₁" : "₂";
+  const texts = [
+    `<b>Step 1 · LP optimum.</b> Solving the current LP (grey) gives
+     x̂ = ${pt} with bound ${fmt(R.bound)}. Its coordinate x${sub} is fractional.`,
+    `<b>Step 2 · Split.</b> Every integer solution satisfies x${sub} ≤ 0 ∨ x${sub} ≥ 1,
+     so the slab 0 &lt; x${sub} &lt; 1 can be thrown away. What is left are the two
+     pieces: <span style="color:${lapColors.p1}">x${sub} = 0</span> and
+     <span style="color:${lapColors.p2}">x${sub} = 1</span>.`,
+    `<b>Step 3 · Hull.</b> The convex hull of the two pieces (green) is P${sub}, the
+     lift-and-project relaxation. It does not contain x̂.` +
+     (R.hull_integral ? ` Here it is <b>already the integer hull</b>.` : ""),
+    `<b>Step 4 · Cut.</b> The CGLP returns one inequality valid for the hull that
+     cuts off x̂: <b>${R.cut_text}</b>.` +
+     (R.cut_is_facet ? ` It is an edge (facet) of the hull.`
+                     : ` It is valid for the hull but <b>not</b> one of its edges, so
+                        another round is needed to reach the hull itself.`)
+  ];
+  box.innerHTML = "<p>" + texts.slice(0, S).join("<br>") + "</p>";
+  return box;
+}
+```
+
+::: {.callout-note collapse="true"}
+## Static version of this figure (for printing)
+
+```{python}
 #| label: fig-lap-rounds
 #| fig-cap: "The cutting-plane loop on the example. In each round: the current LP region (grey), the two pieces of the split (blue: $x_j = 0$, orange: $x_j = 1$; here they are segments or single points), their convex hull (green), the LP optimum $\\hat x$ (red), and the lift-and-project cut found by the CGLP (dashed). The last panel is the final LP, which is the integer hull."
 n = len(rounds) + 1
@@ -216,6 +399,7 @@ for ax in axes[:n]:
 fig.tight_layout()
 plt.show()
 ```
+:::
 
 ```{python}
 #| label: tbl-lap-rounds
