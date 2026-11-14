@@ -85,19 +85,8 @@ plt.show()
 
 This is the **transpose** of the structure exploited by
 [Benders decomposition](../benders-decomposition/theory-and-mechanism.qmd), where a few
-linking *variables* (columns) touch every block:
-
-```{python}
-#| label: fig-structure-compare
-#| fig-cap: "Side by side. Benders (left): linking variables, a column of orange blocks; fixing them separates the blocks. Dantzig–Wolfe (right): linking constraints, a row of orange blocks; pricing them separates the blocks. Transposing one matrix gives the other's pattern, which is why each method is the other applied to the LP dual."
-fig, axes = plt.subplots(1, 2, figsize=(12, 5.0))
-draw_structure(axes[0], "benders", K=3, show_rhs=False)
-axes[0].set_title("Benders: linking variables", fontsize=12)
-draw_structure(axes[1], "dw", K=3, show_rhs=False)
-axes[1].set_title("Dantzig–Wolfe: linking constraints", fontsize=12)
-fig.tight_layout()
-plt.show()
-```
+linking *variables* (columns) touch every block. The two structures are compared side
+by side on the [Decomposition Methods](../index.qmd) page.
 
 ## The reformulation: every block as a mix of its extreme points
 
@@ -360,7 +349,8 @@ original variables $x$ or on other structures that pricing can respect [@barnhar
   constraints. The dual variables of the linking rows appear in every block of the dual,
   so the dual has linking *variables*, the structure of
   [Benders decomposition](../benders-decomposition/theory-and-mechanism.qmd#the-structure-benders-exploits)
-  (see the side-by-side figure above). Generating a **column** for the primal master is
+  (compare the two structures on the [Decomposition Methods](../index.qmd) page).
+  Generating a **column** for the primal master is
   the same as generating a **cut** for the dual. One method's pricing problem is the
   other's subproblem.
 - **Dantzig–Wolfe is the LP dual of the Lagrangian dual.** The master LP and the
