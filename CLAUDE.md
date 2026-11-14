@@ -62,6 +62,11 @@ The site cites its sources the way a research paper would. These rules are not o
   `clip_halfplane` cuts a polygon along a split; `lattice_points` lists its integer points.
   Colors: `p1` blue / `p2` orange for pieces or disjuncts; `weak` red for weaker
   relaxations; `hull` green for the convex hull or strongest relaxation.
+- Matrix-structure schematics: `from _lib.structure import draw_structure`, then
+  `draw_structure(ax, "benders" | "dw", K=3)` (linking variables vs. linking constraints).
+- Shared toy models, so related pages show consistent numbers: `_lib/toy_benders.py`
+  (Benders loop, Routine 1 of Fang et al.) and `_lib/toy_dw.py` (column generation,
+  LP / Dantzig–Wolfe / integer bounds).
 - Every figure cell gets `#| label: fig-...` and a `#| fig-cap:` that says what to notice.
 - Code runs with the project root as working directory (`execute-dir: project`).
 - Python dependencies go in `requirements.txt`.

@@ -1,0 +1,43 @@
+---
+kind: subcategory
+title: "Dantzig–Wolfe Decomposition"
+description: "Keep only the linking constraints, describe each block by its extreme points, and generate columns by pricing: the master–pricing loop and its integer extension."
+order: 2
+toc: false
+listing:
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "order"
+    fields: [title, description, categories]
+  - id: papers
+    contents: "**/*.qmd"
+    include:
+      kind: paper
+    type: table
+    sort: "year"
+    fields: [title, author, year]
+    field-display-names:
+      author: "Authors"
+      year: "Year"
+---
+
+**Dantzig–Wolfe decomposition** [@dantzig1960] targets problems made of independent
+blocks tied together by a few *linking constraints*. It rewrites each block as a convex
+combination of its extreme points, keeps only the linking constraints in a *master
+problem*, and generates the master's columns on demand by solving one pricing problem per
+block. The column-generation idea goes back to the multicommodity-flow computation of
+@fordfulkerson1958 and the cutting-stock method of @gilmore1961. Inside branch-and-bound
+it becomes *branch-and-price* [@desrosiers1984; @barnhart1998].
+
+## Topics
+
+::: {#topics}
+:::
+
+## Papers
+
+::: {#papers}
+:::

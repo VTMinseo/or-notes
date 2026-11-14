@@ -14,6 +14,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from IPython.display import Markdown
 from _lib.orplot import shade_polygon, convex_hull, mark_point, COLORS
+from _lib.structure import draw_structure
 from _lib.toy_benders import (C, XL, XU, PIECES, X_INT, f, classic_benders,
                               integer_optimum, master_lp)
 
@@ -51,6 +52,38 @@ not know that cost function exactly. It learns it a piece at a time from a
 **subproblem**, which, given a proposed $x$, solves the easy LP and answers with a
 **cut**, a linear inequality that tells the master what it got wrong. LP duality is what
 makes these cuts exact.
+
+## The structure Benders exploits
+
+Benders decomposition pays off when the constraint matrix has a **block-diagonal** part
+plus a few columns that touch every block. Those columns belong to the **linking
+variables** $x$, sometimes called complicating variables. Each block $k$ has its own
+continuous variables $y_k$ and its own constraints, and the blocks interact *only*
+through $x$:
+
+$$
+A_k x + B_k y_k \ge b_k, \qquad k = 1, \dots, K .
+$$
+
+```{python}
+#| label: fig-benders-structure
+#| fig-cap: "The constraint matrix Benders decomposition exploits. The linking variables $x$ (orange column) appear in every block; each $y_k$ appears only in its own diagonal block $B_k$ (blue), and everything else is zero. Once $x$ is fixed, the orange column becomes part of the right-hand side, and the problem falls apart into $K$ independent LPs, one per block."
+fig, ax = plt.subplots(figsize=(7.2, 4.4))
+draw_structure(ax, "benders", K=3)
+plt.show()
+```
+
+Fixing $x$ moves the orange column to the right-hand side, and what remains splits into
+$K$ independent subproblems $\min\{d_k^\top y_k : B_k y_k \ge b_k - A_k x\}$. That is
+why the subproblem is "easy" even for a huge model: it is many small LPs that can be
+solved separately, and in parallel. The classic example is two-stage stochastic
+programming, where $x$ is the decision made before the uncertainty is revealed and
+block $k$ is the recourse problem of scenario $k$ [@vanslyke1969]. The transposed
+structure, with linking *constraints* instead of linking variables, is the one exploited
+by [Dantzig–Wolfe decomposition](../dantzig-wolfe/theory-and-mechanism.qmd#structure).
+
+The rest of this page writes all the blocks together as a single $B$, $y$ and $b$, so
+$B = \mathrm{diag}(B_1, \dots, B_K)$. Everything below works block by block.
 
 ## The problem and its subproblem
 

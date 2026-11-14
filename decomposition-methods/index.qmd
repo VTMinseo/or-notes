@@ -21,6 +21,26 @@ listing:
     fields: [title, description, categories]
 ---
 
+Large optimization models are often made of independent blocks that interact only
+through a few **linking variables** or a few **linking constraints**. Decomposition
+methods exploit exactly this. Benders decomposition [@benders1962] fixes the linking
+variables and lets the blocks answer with cuts. Dantzig–Wolfe decomposition
+[@dantzig1960] prices the linking constraints and lets the blocks answer with columns.
+
+```{python}
+#| label: fig-structures
+#| fig-cap: "The two block structures. Left: linking variables (an orange column), exploited by Benders decomposition. Right: linking constraints (an orange row), exploited by Dantzig–Wolfe decomposition. Blue: independent diagonal blocks; blank: zeros."
+import matplotlib.pyplot as plt
+from _lib.structure import draw_structure
+fig, axes = plt.subplots(1, 2, figsize=(12, 5.0))
+draw_structure(axes[0], "benders", K=3, show_rhs=False)
+axes[0].set_title("Benders: linking variables", fontsize=12)
+draw_structure(axes[1], "dw", K=3, show_rhs=False)
+axes[1].set_title("Dantzig–Wolfe: linking constraints", fontsize=12)
+fig.tight_layout()
+plt.show()
+```
+
 ## Subcategories
 
 ::: {#subcats}

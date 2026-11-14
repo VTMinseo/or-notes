@@ -1,0 +1,383 @@
+---
+kind: topic
+title: "Dantzig–Wolfe Decomposition: Theory and Mechanism"
+description: "Rewrite each block by its extreme points, keep only the linking constraints, and price out new columns: the master–pricing loop, its bounds, the integer case, and how it mirrors Benders."
+categories: [decomposition, column generation, Lagrangian relaxation]
+order: 1
+level: intermediate
+prerequisites: "LP duality and reduced costs; extreme points and extreme rays of a polyhedron"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from IPython.display import Markdown
+from _lib.orplot import shade_polygon, convex_hull, clip_halfplane, mark_point, COLORS
+from _lib.structure import draw_structure
+from _lib.toy_dw import (V, C, A_LINK, B_LINK, INT_PTS, column_generation,
+                         lp_relaxation, dw_integer_bound, integer_optimum)
+
+LOG = column_generation()
+X_LP, Z_LP = lp_relaxation()
+X_DW, Z_DW = dw_integer_bound()
+X_IP, Z_IP = integer_optimum()
+XLIM, YLIM = (-0.4, 7.0), (-0.4, 5.6)
+
+def link_region(vertices):
+    """Intersect a polygon with the linking constraint a^T x <= beta."""
+    return clip_halfplane(vertices, A_LINK, B_LINK)
+
+def draw_link(ax):
+    xs = np.linspace(*XLIM, 2)
+    ax.plot(xs, (B_LINK - A_LINK[0] * xs) / A_LINK[1], color=COLORS["p2"], lw=1.8, ls="--")
+    ax.text(-0.3, 4.55, "$x_1 + 2x_2 \\leq 8$", color=COLORS["p2"], fontsize=9, ha="left")
+
+def axes_2d(ax):
+    ax.set_xlim(*XLIM); ax.set_ylim(*YLIM); ax.set_aspect("equal")
+    ax.grid(True, color=COLORS["grid"], lw=0.5, alpha=0.5)
+    ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$")
+
+fmtv = lambda v: f"({v[0] + 0.0:.1f}, {v[1] + 0.0:.1f})"
+```
+
+## The idea
+
+Many large models consist of **independent parts that share a few resources**. In a
+multicommodity flow problem, each commodity has its own flow-conservation constraints,
+but all commodities share the arc capacities. In cutting stock, each roll is cut on its
+own, but together the rolls must meet the demand for every width. In vehicle routing,
+each vehicle drives its own route, but every customer must be visited exactly once.
+
+@dantzig1960 proposed a decomposition that matches this picture. A *coordinator* (the
+**master problem**) never looks at the details of the parts. It only sees **proposals**
+from each part (complete plans for that part) and chooses the best *mix* of them that
+respects the shared constraints. To steer the parts, it announces **prices** on the shared
+resources. Each part answers with its best plan at those prices (the **pricing
+problem**), the coordinator updates its mix and its prices, and the loop repeats. Dantzig
+and Wolfe read this as a model of decentralized planning in a firm.
+
+The device of handling a huge set of variables implicitly, by "pricing" them only when
+needed, was used just before by @fordfulkerson1958 for multicommodity flows, and soon
+after by @gilmore1961 for cutting stock. Today it is known as **column generation**.
+
+## The structure Dantzig–Wolfe exploits {#structure}
+
+The constraint matrix has a **block-diagonal** part plus a few rows that touch every
+block. These **linking constraints** (or complicating constraints) are the only thing
+coupling the blocks:
+
+$$
+\min \sum_{k=1}^K c_k^\top x_k
+\quad\text{s.t.}\quad
+\sum_{k=1}^K D_k x_k \le d \;\;(\text{linking}),
+\qquad
+x_k \in X_k = \{x_k : B_k x_k \le b_k\} \;\; (k = 1, \dots, K).
+$$
+
+```{python}
+#| label: fig-dw-structure
+#| fig-cap: "The constraint matrix Dantzig–Wolfe decomposition exploits. The linking constraints (orange rows) involve every block's variables; each block $x_k$ has its own constraints $B_k$ (blue), and everything else is zero. If the linking rows are moved into the objective with prices, the problem falls apart into $K$ independent pricing problems, one per block."
+fig, ax = plt.subplots(figsize=(7.2, 4.8))
+draw_structure(ax, "dw", K=3)
+plt.show()
+```
+
+This is the **transpose** of the structure exploited by
+[Benders decomposition](../benders-decomposition/theory-and-mechanism.qmd), where a few
+linking *variables* (columns) touch every block:
+
+```{python}
+#| label: fig-structure-compare
+#| fig-cap: "Side by side. Benders (left): linking variables, a column of orange blocks; fixing them separates the blocks. Dantzig–Wolfe (right): linking constraints, a row of orange blocks; pricing them separates the blocks. Transposing one matrix gives the other's pattern, which is why each method is the other applied to the LP dual."
+fig, axes = plt.subplots(1, 2, figsize=(12, 5.0))
+draw_structure(axes[0], "benders", K=3, show_rhs=False)
+axes[0].set_title("Benders: linking variables", fontsize=12)
+draw_structure(axes[1], "dw", K=3, show_rhs=False)
+axes[1].set_title("Dantzig–Wolfe: linking constraints", fontsize=12)
+fig.tight_layout()
+plt.show()
+```
+
+## The reformulation: every block as a mix of its extreme points
+
+The key fact is the representation theorem for polyhedra of Minkowski and Weyl
+[@minkowski1896; @weyl1935]. Every nonempty polyhedron $X_k$ is the convex hull of its
+finitely many **extreme points** $P_k$ plus the cone generated by its finitely many
+**extreme rays** $R_k$:
+
+$$
+x_k \in X_k
+\iff
+x_k = \sum_{p \in P_k} \lambda_{kp}\, p \;+\; \sum_{r \in R_k} \mu_{kr}\, r,
+\qquad \sum_{p \in P_k} \lambda_{kp} = 1,\quad \lambda, \mu \ge 0 .
+$$
+
+Substituting this for every $x_k$ gives the **Dantzig–Wolfe master problem**, written in
+the new variables $\lambda$ and $\mu$:
+
+$$
+\begin{aligned}
+\min_{\lambda,\,\mu \,\ge\, 0}\quad
+& \sum_k \Big( \sum_{p \in P_k} (c_k^\top p)\,\lambda_{kp} + \sum_{r \in R_k} (c_k^\top r)\,\mu_{kr} \Big) \\
+\text{s.t.}\quad
+& \sum_k \Big( \sum_{p \in P_k} (D_k p)\,\lambda_{kp} + \sum_{r \in R_k} (D_k r)\,\mu_{kr} \Big) \le d
+  && \text{(linking; duals } \pi \le 0) \\
+& \sum_{p \in P_k} \lambda_{kp} = 1 \quad (k = 1, \dots, K)
+  && \text{(convexity; duals } \sigma_k).
+\end{aligned}
+$$
+
+The master is equivalent to the original LP, and it has **very few rows**: one per
+linking constraint plus one convexity row per block. The price is an **enormous number of
+columns**, one for every extreme point and every extreme ray of every block. Column
+generation deals with that by never writing them all down.
+
+## Column generation: the algorithm
+
+Work with a **restricted master problem** (RMP) that contains only a few columns, and
+repeat:
+
+1. **Solve the RMP.** This gives a primal solution $\lambda$, duals $\pi$ for the linking
+   constraints, and duals $\sigma_k$ for the convexity rows. Its value $z_{\text{RMP}}$ is
+   an **upper bound** on the master's optimum (for a minimization), since the RMP uses
+   only some of the columns.
+2. **Price.** The reduced cost of the column for extreme point $p$ of block $k$ is
+   $(c_k - D_k^\top \pi)^\top p - \sigma_k$. The most negative one in block $k$ is found by
+   solving the **pricing problem**
+   $$
+   \min_{x_k \in X_k}\; (c_k - D_k^\top \pi)^\top x_k ,
+   $$
+   an optimization over block $k$ *alone*, with the linking constraints moved into the
+   objective at prices $\pi$. If it is unbounded, it returns an extreme ray with negative
+   reduced cost instead.
+3. **Add or stop.** Add every column with negative reduced cost to the RMP and go back to
+   step 1. If no block has one, the RMP solution is optimal for the full master, and so
+   for the original problem.
+
+Because each new column is an extreme point or ray, and there are finitely many, the
+process ends after finitely many iterations [@dantzig1960].
+
+**A lower bound in every iteration.** Write $\mathrm{rc}_k^\ast$ for the optimal reduced
+cost of block $k$. When every $X_k$ is bounded,
+
+$$
+z_{\text{RMP}} + \sum_{k=1}^K \min\big(0,\, \mathrm{rc}_k^\ast\big) \;\le\; z^\ast \;\le\; z_{\text{RMP}} ,
+$$
+
+so column generation can be stopped as soon as the two bounds are close enough.
+
+::: {.callout-tip collapse="true"}
+## Why the lower bound holds (Lagrangian relaxation)
+Relax the linking constraints with multipliers $-\pi \ge 0$. For any such $\pi$, the
+**Lagrangian relaxation** [@geoffrion1974]
+$$
+L(\pi) \;=\; \pi^\top d + \sum_k \min_{x_k \in X_k} (c_k - D_k^\top \pi)^\top x_k
+$$
+is a lower bound on $z^\ast$: any feasible $x$ satisfies $\sum_k D_k x_k \le d$, and
+$\pi \le 0$, so $-\pi^\top(\sum_k D_k x_k - d) \ge 0$ only adds a nonnegative term to the
+objective of a relaxation. By LP duality on the RMP, $z_{\text{RMP}} = \pi^\top d + \sum_k
+\sigma_k$. Subtracting,
+$$
+L(\pi) \;=\; z_{\text{RMP}} + \sum_k \Big(\min_{x_k \in X_k}(c_k - D_k^\top\pi)^\top x_k - \sigma_k\Big)
+\;=\; z_{\text{RMP}} + \sum_k \mathrm{rc}_k^\ast .
+$$
+Once $\mathrm{rc}_k^\ast \ge 0$ for all $k$, the two bounds meet.
+:::
+
+## A worked example
+
+To see the geometry, take a single block in two dimensions:
+
+$$
+\min\; -2x_1 - 3x_2
+\quad\text{s.t.}\quad
+x_1 + 2x_2 \le 8 \;\;(\text{linking}),
+\qquad x \in X ,
+$$
+
+where $X$ is the pentagon with vertices
+`{python} ", ".join(fmtv(v) for v in V)`. With one block, the master chooses a convex
+combination of vertices of $X$ that satisfies the linking constraint. Its feasible region
+in $x$-space is $\mathrm{conv}(\text{columns so far}) \cap \{x_1 + 2x_2 \le 8\}$, which
+grows as columns are added. We start the RMP with the single column $(0, 0)$.
+
+```{python}
+#| label: fig-dw-iterations
+#| fig-cap: "Column generation on the example. Grey: the block $X$. Orange dashed: the linking constraint. Green: the region the restricted master can reach, $\\mathrm{conv}(\\text{columns}) \\cap \\{x_1 + 2x_2 \\leq 8\\}$; black dots are the columns. Red: the RMP solution $\\sum_v \\lambda_v v$. Star: the vertex returned by pricing, which becomes the next column. The arrow points along $-(c - \\pi a)$, the direction pricing pushes toward. In the last panel no vertex has negative reduced cost, so the RMP solution is optimal."
+n = len(LOG)
+fig, grid = plt.subplots(2, 2, figsize=(9.6, 8.6))
+axes = grid.ravel()
+for ax, it in zip(axes, LOG):
+    axes_2d(ax)
+    shade_polygon(ax, V, "#888888", alpha=0.15, lw=1.0)
+    draw_link(ax)
+    cols = [tuple(c) for c in it["cols"]]
+    if len(cols) >= 3:
+        reg = link_region(list(map(tuple, convex_hull(cols))))
+        if len(reg) >= 3:
+            shade_polygon(ax, reg, COLORS["hull"], alpha=0.3)
+    elif len(cols) == 2:
+        p0, p1 = np.array(cols[0]), np.array(cols[1])
+        # largest t in [0,1] with a^T (p0 + t (p1 - p0)) <= beta
+        slope = A_LINK @ (p1 - p0)
+        t = 1.0 if slope <= 0 else min(1.0, (B_LINK - A_LINK @ p0) / slope)
+        q = p0 + t * (p1 - p0)
+        ax.plot(*zip(p0, p1), color=COLORS["hull"], lw=1.2, ls=":", alpha=0.8)
+        ax.plot(*zip(p0, q), color=COLORS["hull"], lw=4, alpha=0.8, solid_capstyle="round")
+    ax.scatter(*zip(*cols), color="black", s=30, zorder=6)
+    mark_point(ax, it["x"], COLORS["weak"], size=60)
+    g = -(C - it["pi"] * A_LINK)
+    g = g / np.linalg.norm(g)
+    ax.annotate("", xy=(5.3 + 0.9 * g[0], 4.3 + 0.9 * g[1]), xytext=(5.3, 4.3),
+                arrowprops=dict(arrowstyle="->", color="black", lw=1.4))
+    if it["new"] is not None:
+        ax.scatter(*it["new"], marker="*", s=260, color="gold", edgecolor="black",
+                   lw=0.8, zorder=7)
+        title = (f"Iteration {it['k'] + 1}: $\\pi = {it['pi'] + 0.0:.3f}$\n"
+                 f"price → add {fmtv(it['new'])}, reduced cost {it['rc']:.2f}")
+    else:
+        title = (f"Iteration {it['k'] + 1}: $\\pi = {it['pi'] + 0.0:.3f}$\n"
+                 "no negative reduced cost → optimal")
+    ax.set_title(title, fontsize=10)
+for ax in axes[n:]:
+    ax.set_visible(False)
+fig.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: tbl-dw-iterations
+#| tbl-cap: "Iterations of column generation. Upper bound: value of the restricted master. Lower bound: the Lagrangian bound $z_{\\text{RMP}} + \\min(0, \\mathrm{rc}^\\ast)$."
+rows = []
+for it in LOG:
+    new = fmtv(it["new"]) if it["new"] is not None else "— (stop)"
+    rows.append(f"| {it['k'] + 1} | {len(it['cols'])} | {it['z'] + 0.0:.3f} | "
+                f"{it['lb']:.3f} | {it['pi'] + 0.0:.3f} | {it['mu'] + 0.0:.3f} | "
+                f"{it['rc']:.3f} | {new} |")
+Markdown("| Iteration | Columns | Upper bound $z_{\\text{RMP}}$ | Lagrangian lower bound | "
+         "$\\pi$ | $\\sigma$ | $\\mathrm{rc}^\\ast$ | Column added |\n"
+         "|---:|---:|---:|---:|---:|---:|---:|---|\n" + "\n".join(rows))
+```
+
+Three things to notice:
+
+1. **The first price is zero.** With only the column $(0,0)$, the linking constraint is
+   slack, so $\pi = 0$ and pricing simply returns the vertex that is best for the original
+   objective, $(3.6, 4.7)$. It violates the linking constraint, and the master can only use
+   part of it.
+2. **Prices steer the blocks.** Once the linking constraint binds, $\pi < 0$ makes the
+   linking resource "expensive", which tilts the pricing objective (the arrow) toward
+   vertices that use less of it.
+3. **The lower bound is not monotone.** It goes
+   `{python} " → ".join(f"{it['lb']:.2f}" for it in LOG)`. The duals $\pi$ jump from
+   iteration to iteration, and so does the Lagrangian bound. This instability of the
+   duals is a well-known cause of slow convergence in column generation; see
+   [Practical issues](#practical).
+
+The final master solution `{python} fmtv(LOG[-1]['x'])` with value
+`{python} f"{LOG[-1]['z']:.3f}"` is the LP optimum of the original problem.
+
+## Dantzig–Wolfe for integer programs
+
+The reformulation becomes most powerful when the blocks contain **integer** variables,
+$X_k = \{x_k \in \mathbb{Z}^{n_k} : B_k x_k \le b_k\}$. Then the master is built from the
+extreme points of $\mathrm{conv}(X_k)$, which are integer points, and pricing becomes an
+integer program over one block. Often this is a well-studied combinatorial problem: a
+knapsack problem in cutting stock [@gilmore1961], or a shortest path with resource
+constraints in routing with time windows [@desrosiers1984].
+
+Solving the master's LP then gives the bound
+
+$$
+z_{\text{DW}} \;=\; \min\Big\{ \sum_k c_k^\top x_k \;:\; \sum_k D_k x_k \le d,\;\; x_k \in \mathrm{conv}(X_k) \Big\},
+$$
+
+which equals the **Lagrangian dual bound**. It is at least as strong as the LP
+relaxation, and strictly stronger unless the block polyhedra already have integer
+vertices, the "integrality property" [@geoffrion1974]. The convexification happens
+inside each block, exactly where integrality is "easy". This is the same idea as
+[convexifying a disjunction](../../integer-programming/disjunctive-programming/big-m-vs-hull.qmd),
+applied block by block.
+
+```{python}
+#| label: fig-dw-integer
+#| fig-cap: "The integer version of the example. Grey: the LP relaxation $X$. Green: $\\mathrm{conv}(X \\cap \\mathbb{Z}^2)$, the region Dantzig–Wolfe with integer pricing works over. Black dots: integer points. Markers: LP optimum (red), Dantzig–Wolfe optimum (green), and integer optimum (gold star). The Dantzig–Wolfe bound lies between the other two."
+fig, ax = plt.subplots(figsize=(6.0, 5.0))
+axes_2d(ax)
+shade_polygon(ax, V, "#888888", alpha=0.18, lw=1.0)
+shade_polygon(ax, list(map(tuple, convex_hull([tuple(p) for p in INT_PTS]))),
+              COLORS["hull"], alpha=0.28)
+draw_link(ax)
+ax.scatter(*INT_PTS.T, color="black", s=16, zorder=5)
+mark_point(ax, X_LP, COLORS["weak"], size=70)
+mark_point(ax, X_DW, COLORS["hull"], size=70)
+ax.scatter(*X_IP, marker="*", s=260, color="gold", edgecolor="black", lw=0.8, zorder=7)
+ax.annotate("LP", X_LP, xytext=(9, -12), textcoords="offset points", fontsize=9,
+            color=COLORS["weak"], fontweight="bold")
+ax.annotate("DW", X_DW, xytext=(-8, 9), textcoords="offset points", fontsize=9,
+            color="#2f6b3c", fontweight="bold")
+ax.annotate("integer", X_IP, xytext=(-46, -14), textcoords="offset points", fontsize=9)
+plt.show()
+```
+
+```{python}
+#| label: tbl-dw-integer
+#| tbl-cap: "Bounds for the integer version of the example (minimization: larger is tighter)."
+Markdown(
+    "| Bound | Value | Optimal $x$ |\n|---|---:|---|\n"
+    f"| LP relaxation | {Z_LP:.3f} | {fmtv(X_LP)} |\n"
+    f"| Dantzig–Wolfe (integer pricing) = Lagrangian dual | {Z_DW:.3f} | {fmtv(X_DW)} |\n"
+    f"| Integer optimum | {Z_IP:.3f} | {fmtv(X_IP)} |"
+)
+```
+
+**Branch-and-price.** The master's LP solution is usually still fractional, so column
+generation is embedded in branch-and-bound: new columns are priced at every node of the
+tree. Desrosiers, Soumis and Desrochers did this for vehicle routing with time windows
+[@desrosiers1984], and @barnhart1998 laid out the general method under the name
+**branch-and-price**. Branching needs care. Branching directly on a master variable
+$\lambda$ is hard to express in the pricing problem, so one usually branches on the
+original variables $x$ or on other structures that pricing can respect [@barnhart1998].
+
+## Practical issues {#practical}
+
+- **Tailing-off.** Column generation often finds a near-optimal solution quickly and then
+  spends many iterations proving optimality, with the duals oscillating as in the
+  example. **Stabilization** keeps the duals near a good point, for example by penalizing
+  moves away from it [@dumerle1999]. The survey of @lubbecke2005 reviews this and other
+  techniques, with an emphasis on the dual point of view.
+- **Early termination.** Thanks to the Lagrangian bound, one can stop when the gap
+  between the bounds is small, which in branch-and-price is often enough to prune a node.
+- **Initialization.** The first RMP must be feasible. In practice one adds artificial
+  columns with a high cost (a big-M "Phase I") or a heuristic solution.
+- **Degeneracy.** Master problems are often highly degenerate, with many dual optima for
+  the same primal solution, which also slows convergence [@lubbecke2005].
+
+## Relation to Benders decomposition and Lagrangian relaxation
+
+- **Benders is Dantzig–Wolfe on the dual.** Take the LP dual of a problem with linking
+  constraints. The dual variables of the linking rows appear in every block of the dual,
+  so the dual has linking *variables*, the structure of
+  [Benders decomposition](../benders-decomposition/theory-and-mechanism.qmd#the-structure-benders-exploits)
+  (see the side-by-side figure above). Generating a **column** for the primal master is
+  the same as generating a **cut** for the dual. One method's pricing problem is the
+  other's subproblem.
+- **Dantzig–Wolfe is the LP dual of the Lagrangian dual.** The master LP and the
+  Lagrangian dual $\max_{\pi \le 0} L(\pi)$ have the same optimal value
+  [@geoffrion1974]. Column generation solves the Lagrangian dual by building up an outer
+  approximation of $L$ with one linear piece per column, which explains both the
+  lower bound above and the oscillation of the duals.
+- **Where the strength comes from differs.** Benders keeps the integer variables in the
+  master, so its cuts only see the continuous relaxation; see the
+  [limits of Benders cuts](../benders-decomposition/theory-and-mechanism.qmd#limits).
+  Dantzig–Wolfe for integer programs convexifies inside each block, so its bound
+  reflects integrality at the block level.
+
+## Further reading
+
+- @dantzig1960 — the original decomposition principle.
+- @fordfulkerson1958 and @gilmore1961 — the first column-generation computations.
+- @barnhart1998 — branch-and-price for huge integer programs.
+- @lubbecke2005 — a survey of column generation and Dantzig–Wolfe decomposition.
+- [Benders Decomposition: Theory and Mechanism](../benders-decomposition/theory-and-mechanism.qmd)

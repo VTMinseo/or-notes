@@ -1,0 +1,12 @@
+{
+  "hash": "2089a82efb2f362d77f0c6344d9c42e6",
+  "result": {
+    "engine": "jupyter",
+    "markdown": "---\nkind: category\ntitle: \"Decomposition Methods\"\ndescription: \"Splitting large optimization problems into a master problem and easier subproblems.\"\norder: 4\ntoc: false\nlisting:\n  - id: subcats\n    contents: \"**/*.qmd\"\n    include:\n      kind: subcategory\n    type: table\n    sort: \"order\"\n    fields: [title, description]\n  - id: topics\n    contents: \"**/*.qmd\"\n    include:\n      kind: topic\n    type: table\n    sort: \"title\"\n    fields: [title, description, categories]\n---\n\nLarge optimization models are often made of independent blocks that interact only\nthrough a few **linking variables** or a few **linking constraints**. Decomposition\nmethods exploit exactly this. Benders decomposition [@benders1962] fixes the linking\nvariables and lets the blocks answer with cuts. Dantzig–Wolfe decomposition\n[@dantzig1960] prices the linking constraints and lets the blocks answer with columns.\n\n::: {#cell-fig-structures .cell execution_count=1}\n\n::: {.cell-output .cell-output-display}\n![The two block structures. Left: linking variables (an orange column), exploited by Benders decomposition. Right: linking constraints (an orange row), exploited by Dantzig–Wolfe decomposition. Blue: independent diagonal blocks; blank: zeros.](index_files/figure-html/fig-structures-output-1.png){#fig-structures width=1295 height=555}\n:::\n:::\n\n\n## Subcategories\n\n::: {#subcats}\n:::\n\n## All topics in this category\n\n::: {#topics}\n:::\n\n",
+    "supporting": [
+      "index_files"
+    ],
+    "filters": [],
+    "includes": {}
+  }
+}
