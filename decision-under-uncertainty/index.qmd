@@ -1,7 +1,7 @@
 ---
 kind: category
-title: "Stochastic Programming"
-description: "Decisions under uncertainty: two-stage models, scenarios, and decomposition."
+title: "Decision under Uncertainty"
+description: "Optimization models and methods for decisions made before uncertain data are known."
 order: 3
 toc: false
 listing:

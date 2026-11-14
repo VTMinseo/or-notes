@@ -1,0 +1,39 @@
+---
+kind: subcategory
+title: "Stochastic Programming"
+description: "Two-stage and multistage models, scenarios, and decomposition."
+order: 1
+toc: false
+listing:
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "order"
+    fields: [title, description, categories]
+  - id: papers
+    contents: "**/*.qmd"
+    include:
+      kind: paper
+    type: table
+    sort: "year"
+    fields: [title, author, year]
+    field-display-names:
+      author: "Authors"
+      year: "Year"
+---
+
+Related: the L-shaped method [@vanslyke1969], Benders decomposition applied to two-stage
+stochastic programs, is covered in
+[Benders Decomposition: Theory and Mechanism](../../decomposition-methods/benders-decomposition/theory-and-mechanism.qmd).
+
+## Topics
+
+::: {#topics}
+:::
+
+## Papers
+
+::: {#papers}
+:::
