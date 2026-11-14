@@ -265,7 +265,7 @@ Three things to notice:
    `{python} " → ".join(f"{it['lb']:.2f}" for it in LOG)`. The duals $\pi$ jump from
    iteration to iteration, and so does the Lagrangian bound. This instability of the
    duals is a well-known cause of slow convergence in column generation; see
-   [Practical issues](#practical).
+   [Column Generation in Practice](practical-issues.qmd).
 
 The final master solution `{python} fmtv(LOG[-1]['x'])` with value
 `{python} f"{LOG[-1]['z']:.3f}"` is the LP optimum of the original problem.
@@ -344,74 +344,6 @@ ax.annotate("integer", X_IP, xytext=(-46, -14), textcoords="offset points", font
 plt.show()
 ```
 
-```{python}
-#| label: tbl-dw-integer
-#| tbl-cap: "Bounds for the integer version of the example (minimization: larger is tighter)."
-Markdown(
-    "| Bound | Value | Optimal $x$ |\n|---|---:|---|\n"
-    f"| LP relaxation | {Z_LP:.3f} | {fmtv(X_LP)} |\n"
-    f"| Dantzig–Wolfe (integer pricing) = Lagrangian dual | {Z_DW:.3f} | {fmtv(X_DW)} |\n"
-    f"| Integer optimum | {Z_IP:.3f} | {fmtv(X_IP)} |"
-)
-```
-
-```{python}
-#| label: fig-dw-hierarchy
-#| fig-cap: "The Lagrangian function $L(\\pi)$ of the example, for continuous blocks (pricing over $X$, red) and for integer blocks (pricing over $X \\cap \\mathbb{Z}^2$, green). Both are concave and piecewise linear. The maximum of the red curve is $z_{\\text{LP}}$; the maximum of the green curve is $z_{\\text{LD}} = z_{\\text{DW}}$, strictly higher. Away from its maximum, the green curve drops below $z_{\\text{LP}}$: a Lagrangian bound at poor prices can be weaker than the LP bound. Dots: the green curve at the prices visited by column generation."
-from scipy.optimize import linprog as _lp
-
-def L_of(pi, pts):
-    pts = np.asarray(pts, float)
-    return B_LINK * pi + np.min(pts @ (C - pi * A_LINK))
-
-def L_max(pts):
-    """max_{pi <= 0}  beta*pi + t   s.t.  t <= (c - pi a).v  for all v."""
-    pts = np.asarray(pts, float)
-    res = _lp([-B_LINK, -1.0], A_ub=np.column_stack([pts @ A_LINK, np.ones(len(pts))]),
-              b_ub=pts @ C, bounds=[(None, 0), (None, None)])
-    return -res.fun, res.x[0]
-
-PIS = np.linspace(-3.2, 0.0, 641)
-L_LP = np.array([L_of(p, V) for p in PIS])
-L_IP = np.array([L_of(p, INT_PTS) for p in PIS])
-ZLD_LP, PI_LP = L_max(V)
-ZLD_IP, PI_IP = L_max(INT_PTS)
-
-fig, ax = plt.subplots(figsize=(7.0, 4.4))
-ax.plot(PIS, L_LP, color=COLORS["weak"], lw=2, label="$L(\\pi)$, pricing over $X$")
-ax.plot(PIS, L_IP, color=COLORS["hull"], lw=2,
-        label="$L(\\pi)$, pricing over $X \\cap \\mathbb{Z}^2$")
-ax.axhline(Z_LP, color=COLORS["weak"], ls="--", lw=1)
-ax.axhline(Z_DW, color=COLORS["hull"], ls="--", lw=1)
-ax.axhline(Z_IP, color="goldenrod", ls="--", lw=1.2)
-ax.text(-3.15, Z_IP + 0.08, f"$z_{{\\mathrm{{IP}}}} = {Z_IP:.2f}$", fontsize=9, color="goldenrod")
-ax.text(-3.15, Z_DW + 0.08, f"$z_{{\\mathrm{{LD}}}} = z_{{\\mathrm{{DW}}}} = {Z_DW:.2f}$",
-        fontsize=9, color="#2f6b3c")
-ax.text(-3.15, Z_LP - 0.25, f"$z_{{\\mathrm{{LP}}}} = {Z_LP:.2f}$", fontsize=9, color=COLORS["weak"])
-cg_pis = [it["pi"] for it in LOG]
-ax.scatter(cg_pis, [L_of(p, INT_PTS) for p in cg_pis], color=COLORS["hull"],
-           edgecolor="black", s=40, zorder=5)
-ax.set_xlabel("price $\\pi$ on the linking constraint")
-ax.set_ylabel("lower bound")
-ax.set_ylim(-17.2, -13.5)
-ax.grid(True, color=COLORS["grid"], lw=0.5, alpha=0.5)
-ax.legend(loc="center right", fontsize=9)
-plt.show()
-```
-
-```{python}
-#| label: tbl-dw-hierarchy
-#| tbl-cap: "The hierarchy on the example (minimization: larger is tighter). The maxima of $L$ are computed exactly by LP and match the bounds from the table above."
-rows = [f"| $L(\\pi)$ at the prices of iteration {it['k'] + 1} ($\\pi = {it['pi'] + 0.0:.3f}$), "
-        f"integer pricing | {L_of(it['pi'], INT_PTS):.3f} |" for it in LOG]
-Markdown(
-    "| Bound | Value |\n|---|---:|\n" + "\n".join(rows) + "\n"
-    f"| $z_{{\\text{{LP}}}} = \\max_\\pi L(\\pi)$ with pricing over $X$ | {ZLD_LP:.3f} |\n"
-    f"| $z_{{\\text{{LD}}}} = \\max_\\pi L(\\pi)$ with integer pricing $= z_{{\\text{{DW}}}}$ | {ZLD_IP:.3f} |\n"
-    f"| $z_{{\\text{{IP}}}}$ | {Z_IP:.3f} |"
-)
-```
-
 **Branch-and-price.** The master's LP solution is usually still fractional, so column
 generation is embedded in branch-and-bound: new columns are priced at every node of the
 tree. Desrosiers, Soumis and Desrochers did this for vehicle routing with time windows
@@ -419,20 +351,6 @@ tree. Desrosiers, Soumis and Desrochers did this for vehicle routing with time w
 **branch-and-price**. Branching needs care. Branching directly on a master variable
 $\lambda$ is hard to express in the pricing problem, so one usually branches on the
 original variables $x$ or on other structures that pricing can respect [@barnhart1998].
-
-## Practical issues {#practical}
-
-- **Tailing-off.** Column generation often finds a near-optimal solution quickly and then
-  spends many iterations proving optimality, with the duals oscillating as in the
-  example. **Stabilization** keeps the duals near a good point, for example by penalizing
-  moves away from it [@dumerle1999]. The survey of @lubbecke2005 reviews this and other
-  techniques, with an emphasis on the dual point of view.
-- **Early termination.** Thanks to the Lagrangian bound, one can stop when the gap
-  between the bounds is small, which in branch-and-price is often enough to prune a node.
-- **Initialization.** The first RMP must be feasible. In practice one adds artificial
-  columns with a high cost (a big-M "Phase I") or a heuristic solution.
-- **Degeneracy.** Master problems are often highly degenerate, with many dual optima for
-  the same primal solution, which also slows convergence [@lubbecke2005].
 
 ## Relation to Benders decomposition and Lagrangian relaxation
 
@@ -461,4 +379,6 @@ original variables $x$ or on other structures that pricing can respect [@barnhar
 - @fordfulkerson1958 and @gilmore1961 — the first column-generation computations.
 - @barnhart1998 — branch-and-price for huge integer programs.
 - @lubbecke2005 — a survey of column generation and Dantzig–Wolfe decomposition.
+- [Column Generation in Practice](practical-issues.qmd) — tailing-off, stabilization,
+  early termination, initialization and degeneracy.
 - [Benders Decomposition: Theory and Mechanism](../benders-decomposition/theory-and-mechanism.qmd)

@@ -1,0 +1,51 @@
+---
+kind: topic
+title: "Column Generation in Practice"
+description: "Tailing-off, stabilization, early termination, initialization and degeneracy: what makes Dantzig–Wolfe decomposition fast or slow in practice."
+categories: [column generation, stabilization]
+order: 2
+level: intermediate
+prerequisites: "Dantzig–Wolfe decomposition and column generation"
+---
+
+The [theory page](theory-and-mechanism.qmd) describes Dantzig–Wolfe decomposition
+[@dantzig1960] and the column-generation loop that solves its master problem
+[@fordfulkerson1958; @gilmore1961]. Stated that way, the loop is simple. In practice,
+whether it is fast depends on a handful of recurring issues, collected here. The survey
+of @lubbecke2005 covers them in depth, with an emphasis on the dual point of view.
+
+## Tailing-off
+
+Column generation often finds a near-optimal solution quickly, then spends many
+iterations proving optimality. Throughout, the duals $\pi$ oscillate from iteration to
+iteration. The [worked example](theory-and-mechanism.qmd#a-worked-example) on the theory
+page shows this on a small scale: its Lagrangian lower bound is not monotone, because
+the prices jump between iterations.
+
+**Stabilization** fights this by keeping the duals near a good point, for example by
+penalizing moves away from it [@dumerle1999].
+
+## Early termination
+
+Every iteration provides the Lagrangian lower bound $z_{\text{RMP}} + \sum_k
+\min(0, \mathrm{rc}_k^\ast)$ [@geoffrion1974] as well as the upper bound $z_{\text{RMP}}$
+(see [the theory page](theory-and-mechanism.qmd#column-generation-the-algorithm)). So
+one can stop as soon as the gap between the two is small. In branch-and-price
+[@desrosiers1984; @barnhart1998], this is often enough to prune a node without solving
+its master to optimality.
+
+## Initialization
+
+The first restricted master problem must be feasible. In practice one adds artificial
+columns with a high cost (a big-M "Phase I") or starts from a heuristic solution.
+
+## Degeneracy
+
+Master problems are often highly degenerate, with many dual optima for the same primal
+solution, which also slows convergence [@lubbecke2005].
+
+## Further reading
+
+- [Dantzig–Wolfe Decomposition: Theory and Mechanism](theory-and-mechanism.qmd)
+- @dumerle1999 — stabilized column generation.
+- @lubbecke2005 — a survey of column generation and Dantzig–Wolfe decomposition.
