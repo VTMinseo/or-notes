@@ -1,0 +1,45 @@
+---
+kind: subcategory
+title: "Robust Optimization"
+description: "Decisions that stay feasible for every data value in an uncertainty set; the budget of uncertainty."
+order: 2
+toc: false
+listing:
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "order"
+    fields: [title, description, categories]
+  - id: papers
+    contents: "**/*.qmd"
+    include:
+      kind: paper
+    type: table
+    sort: "year"
+    fields: [title, author, year]
+    field-display-names:
+      author: "Authors"
+      year: "Year"
+---
+
+Robust optimization treats uncertain data as an *adversary* that can pick any value from a
+given set, and asks for a decision that stays feasible against every such choice. No
+probability distribution is needed. The pages here build up to the budget-of-uncertainty
+model of @bertsimas2004, which keeps a robust linear program linear and lets the modeller
+trade a small loss in the objective for a guaranteed, small probability of constraint
+violation.
+
+Compare with [Stochastic Programming](../stochastic-programming/index.qmd), which models
+the data with a probability distribution and optimizes an expected value instead.
+
+## Topics
+
+::: {#topics}
+:::
+
+## Papers
+
+::: {#papers}
+:::

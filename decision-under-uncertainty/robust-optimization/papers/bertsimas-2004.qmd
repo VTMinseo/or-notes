@@ -1,0 +1,89 @@
+---
+kind: paper
+title: "Bertsimas & Sim (2004): The Price of Robustness"
+author: "Dimitris Bertsimas, Melvyn Sim"
+year: 2004
+description: "The budget of uncertainty Γ: robust LPs and MIPs that stay linear, with probability bounds on constraint violation."
+categories: [paper, robust optimization, budget of uncertainty]
+paper-doi: "10.1287/opre.1030.0065"
+---
+
+::: {.paper-ref}
+**Dimitris Bertsimas and Melvyn Sim** (2004). "The Price of Robustness."
+*Operations Research* 52(1), 35–53.
+[doi:10.1287/opre.1030.0065](https://doi.org/10.1287/opre.1030.0065) [@bertsimas2004]
+:::
+
+## Context
+
+By the early 2000s there were two main ways to make a linear program robust to errors in its
+coefficients.
+
+- @soyster1973 required each constraint to hold when *all* uncertain coefficients take
+  their worst values together. The result is again an LP, but it is very conservative.
+- Ben-Tal and Nemirovski [-@bental1998; -@bental1999; -@bental2000] and El Ghaoui and
+  coauthors [-@elghaoui1997; -@elghaoui1998] used
+  ellipsoidal uncertainty sets. These are far less conservative and come with probability
+  guarantees, but the robust counterpart is a second-order cone program. That is harder to
+  solve at scale and, more importantly, awkward when some variables are integer.
+
+The paper asks whether one can have both: the linearity of Soyster's approach and the
+moderate conservatism of the ellipsoidal one. The title names the quantity to be kept small:
+the objective value given up to gain protection.
+
+## Main contributions
+
+**1. A budget of uncertainty per constraint.** Each row $i$ gets a parameter
+$\Gamma_i \in [0, \lvert J_i\rvert]$, where $J_i$ is the set of its uncertain coefficients.
+The solution must stay feasible when any $\lfloor\Gamma_i\rfloor$ of them take their worst
+values and one more moves part of the way. $\Gamma_i = 0$ is the nominal model and
+$\Gamma_i = \lvert J_i\rvert$ is Soyster's; values in between tune the conservatism of each
+row separately. See [The Model](../budget-of-uncertainty.qmd#the-model).
+
+**2. The robust counterpart is an LP (or a MIP).** The worst case over subsets is written as
+a small LP (Proposition 1) and replaced by its dual, which turns the robust problem into one
+linear program (Theorem 1). It adds a threshold variable per row and one variable per
+uncertain coefficient, keeps the sparsity of the constraint matrix, and keeps integer
+variables integer. This is what makes the approach usable for discrete optimization. See
+[From a max inside a constraint to an LP](../budget-of-uncertainty.qmd#from-a-max-inside-a-constraint-to-an-lp).
+
+**3. Probability bounds that do not depend on the solution.** If the deviations are
+independent, symmetric and bounded, a robust solution violates row $i$ with probability at
+most $e^{-\Gamma_i^2/(2\lvert J_i\rvert)}$ (Theorem 2), and at most a sharper binomial bound
+$B(\lvert J_i\rvert, \Gamma_i)$ that is tight for $\pm 1$ deviations (Theorem 3). Since
+$B(n, \Gamma) \approx 1 - \Phi((\Gamma - 1)/\sqrt n)$, a budget of order $\sqrt n$ already
+gives a small violation probability. See
+[How likely is a violation?](../budget-of-uncertainty.qmd#how-likely-is-a-violation).
+
+**4. Extensions.** The paper compares the conservatism of the budget and ellipsoidal sets
+(Section 4.1), gives the derivative of the optimal value with respect to $\Gamma_i$
+(Theorem 4), and extends the model and the bounds to data driven by a few common factors
+(Section 5).
+
+**5. Experiments.** Three numerical studies:
+
+- a 200-item 0–1 knapsack with $\pm 10\%$ weight uncertainty, where full protection cost
+  about 5.5% of the nominal value but a violation bound of about 0.57% cost only about 1.54%;
+- a 150-asset portfolio problem, in which raising $\Gamma$ first diversifies the portfolio
+  and, past a point, jumps to the single safest asset (Soyster's answer);
+- the NETLIB problem PILOT4, where rows have few uncertain coefficients (at most 29), so a
+  strong guarantee needs a budget close to full protection and the savings are smaller.
+
+Our own version of the knapsack study is in
+[The price of robustness](../budget-of-uncertainty.qmd#the-price-of-robustness-a-knapsack-experiment).
+
+## Why it matters
+
+The budget-of-uncertainty set (often called the *budgeted* or *Γ-uncertainty* set) became
+the default uncertainty set in applied robust optimization, largely because of
+contribution 2: a modeller can add robustness to an existing LP or MIP without changing the
+solver. The same authors carried the idea over to combinatorial problems in
+@bertsimas2003, and its link to norm-based uncertainty sets was made precise by
+Bertsimas, Pachamanova and Sim [-@bertsimas2004norms]. For a broad view of what followed, see the survey of @bertsimas2011.
+
+## Read next
+
+- [Uncertainty Sets and Robust Counterparts](../introduction.qmd): the box and ellipsoid
+  models this paper builds on.
+- [The Budget of Uncertainty](../budget-of-uncertainty.qmd): the model, the proofs, an
+  interactive figure, and our knapsack experiment.

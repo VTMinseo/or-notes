@@ -66,7 +66,8 @@ The site cites its sources the way a research paper would. These rules are not o
   `draw_structure(ax, "benders" | "dw", K=3)` (linking variables vs. linking constraints).
 - Shared toy models, so related pages show consistent numbers: `_lib/toy_benders.py`
   (Benders loop, Routine 1 of Fang et al.) and `_lib/toy_dw.py` (column generation,
-  LP / Dantzig–Wolfe / integer bounds).
+  LP / Dantzig–Wolfe / integer bounds), and `_lib/toy_robust.py` (2-variable robust LP,
+  Bertsimas–Sim protection function and bounds B(n, Γ), robust knapsack).
 - Every figure cell gets `#| label: fig-...` and a `#| fig-cap:` that says what to notice.
 - Code runs with the project root as working directory (`execute-dir: project`).
 - Python dependencies go in `requirements.txt`.
@@ -85,6 +86,9 @@ The site cites its sources the way a research paper would. These rules are not o
   `integer-programming/disjunctive-programming/lift-and-project.qmd`.
 
 ## Writing style
+
+- Never start a line with `@key.` or `@key)`: Pandoc reads it as an example-list marker
+  and the citation disappears. Re-wrap the line so the citation is not first.
 
 - Start with the plain-language idea and a tiny example, then the math, then why it works.
 - Put proofs in collapsed callouts. Use `$...$` / `$$...$$` for math.

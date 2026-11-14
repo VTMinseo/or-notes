@@ -1,0 +1,592 @@
+---
+kind: topic
+title: "The Budget of Uncertainty (Bertsimas–Sim)"
+description: "Protect each constraint against Γ coefficients going wrong at once: the robust LP stays an LP, with a provable bound on the probability of violation."
+categories: [robust optimization, budget of uncertainty, LP duality, probability bounds]
+order: 2
+level: intermediate
+prerequisites: "Uncertainty sets and robust counterparts; LP duality."
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from IPython.display import Markdown
+from _lib.orplot import shade_polygon, mark_point, COLORS
+from _lib.toy_robust import (C, ABAR, AHAT, B, robust_region, robust_lp, uncertainty_set,
+                             protection, bound_B, bound_exp, gamma_for, knapsack_instance,
+                             robust_knapsack, violation_rate)
+
+GAMMAS = [0.0, 0.5, 1.0, 1.5, 2.0]
+SHADES = plt.cm.Blues(np.linspace(0.3, 0.95, len(GAMMAS)))
+
+def fmt_poly(V):
+    return [[round(float(u), 5) + 0.0, round(float(v), 5) + 0.0] for u, v in V]
+```
+
+*This page follows @bertsimas2004, "The Price of Robustness". Background on uncertainty
+sets and the earlier box and ellipsoid models is on
+[Uncertainty Sets and Robust Counterparts](introduction.qmd); notes on the paper itself are
+on [Bertsimas & Sim (2004)](papers/bertsimas-2004.qmd).*
+
+## The idea
+
+The box model of @soyster1973 protects a constraint against *every* uncertain coefficient
+taking its worst value at the same time. When the errors are independent this almost never
+happens: some coefficients come out high, some low, and the errors partly cancel. Protecting
+against the full worst case gives up a lot of objective for very little real benefit.
+
+@bertsimas2004 proposed a middle ground. For each constraint $i$ the modeller picks a
+number $\Gamma_i$, the *budget of uncertainty*, and the solution is protected against any
+$\Gamma_i$ of the row's coefficients going to their worst values at once. Nature can spoil
+some coefficients, but not all of them.
+
+- $\Gamma_i = 0$ gives the nominal problem: no protection.
+- $\Gamma_i$ equal to the number of uncertain coefficients gives Soyster's box model: full
+  protection.
+- Values in between trade objective for protection, one constraint at a time. $\Gamma_i$
+  does not have to be an integer.
+
+**Tiny example.** Row 1 of the toy LP from the [previous page](introduction.qmd) is
+$(2 \pm 0.6)\,x_1 + (1 \pm 0.5)\,x_2 \le 10$ with $x \ge 0$. With $\Gamma_1 = 1$, only one of
+the two coefficients can go wrong, and nature picks whichever hurts more at the current $x$:
+the extra load is $\max(0.6\,x_1,\; 0.5\,x_2)$. So the robust row is
+
+$$
+2x_1 + x_2 + \max(0.6\,x_1,\ 0.5\,x_2) \le 10
+\quad\Longleftrightarrow\quad
+2.6\,x_1 + x_2 \le 10 \;\text{ and }\; 2x_1 + 1.5\,x_2 \le 10 ,
+$$
+
+which is still linear. With $\Gamma_1 = 2$ both coefficients go wrong and the row becomes
+Soyster's $2.6\,x_1 + 1.5\,x_2 \le 10$.
+
+```{python}
+#| label: fig-budget-sets
+#| fig-cap: "Left: the uncertainty set of row 1 for $\\Gamma = 0, 0.5, 1, 1.5, 2$, in the space of its coefficients. It grows from the nominal point to a diamond ($\\Gamma = 1$) and then to the full box ($\\Gamma = 2$, Soyster). Right: the robust feasible region of the toy LP with $\\Gamma_1 = \\Gamma_2 = \\Gamma$, and its optimum. Notice how much objective the first unit of $\\Gamma$ costs compared with the second."
+fig, axes = plt.subplots(1, 2, figsize=(9.8, 4.5))
+ax = axes[0]
+ax.set_aspect("equal"); ax.grid(True, color=COLORS["grid"], lw=0.5, alpha=0.5)
+for g, col in reversed(list(zip(GAMMAS, SHADES))):
+    U = uncertainty_set(0, g)
+    if len(U) == 1:
+        mark_point(ax, U[0], col, label=rf"$\Gamma = {g:g}$ (nominal)", size=40)
+    else:
+        shade_polygon(ax, U, col, alpha=0.12, lw=2.0, label=rf"$\Gamma = {g:g}$")
+ax.set_xlim(1.25, 2.75); ax.set_ylim(0.35, 2.2)
+ax.set_xlabel(r"$\tilde a_{11}$"); ax.set_ylabel(r"$\tilde a_{12}$")
+ax.legend(loc="upper center", fontsize=8.5, ncol=3, columnspacing=0.8, handlelength=1.2)
+ax.set_title(r"uncertainty set $U_1(\Gamma)$")
+
+ax = axes[1]
+ax.set_xlim(0, 5.5); ax.set_ylim(0, 5.5); ax.set_aspect("equal")
+ax.grid(True, color=COLORS["grid"], lw=0.5, alpha=0.5)
+ax.set_xlabel(r"$x_1$"); ax.set_ylabel(r"$x_2$")
+for g, col in zip(GAMMAS, SHADES):
+    shade_polygon(ax, robust_region((g, g)), col, alpha=0.35, lw=1.2)
+for g, col in zip(GAMMAS, SHADES):
+    x, v = robust_lp((g, g))
+    mark_point(ax, x, col, label=rf"$\Gamma = {g:g}$: value {v:.2f}", size=40)
+ax.legend(loc="upper right", fontsize=8.5)
+ax.set_title("robust region and optimum")
+fig.tight_layout()
+plt.show()
+```
+
+## The model
+
+Start from a nominal LP
+
+$$
+\max\; c^\top x \quad\text{s.t.}\quad Ax \le b,\quad l \le x \le u .
+$$
+
+In row $i$, let $J_i$ be the set of coefficients that are uncertain. Each
+$\tilde a_{ij}$, $j \in J_i$, lies in $[\bar a_{ij} - \hat a_{ij},\ \bar a_{ij} + \hat a_{ij}]$
+around its nominal value $\bar a_{ij}$. Pick $\Gamma_i \in [0, \lvert J_i\rvert]$. The robust
+model of @bertsimas2004 is
+
+$$
+\begin{aligned}
+\max\;& c^\top x\\
+\text{s.t. }& \sum_j \bar a_{ij}\, x_j + \beta_i(x, \Gamma_i) \le b_i \qquad i = 1,\dots,m,\\
+& l \le x \le u,
+\end{aligned}
+$$ {#eq-bs-model}
+
+with the *protection function*
+
+$$
+\beta_i(x, \Gamma_i) \;=\;
+\max_{\substack{S_i \subseteq J_i,\ \lvert S_i\rvert = \lfloor\Gamma_i\rfloor\\ t_i \in J_i \setminus S_i}}
+\Big\{ \sum_{j \in S_i} \hat a_{ij}\,\lvert x_j\rvert \;+\; (\Gamma_i - \lfloor\Gamma_i\rfloor)\,\hat a_{i t_i}\lvert x_{t_i}\rvert \Big\}.
+$$ {#eq-protection}
+
+In words: sort the possible damages $\hat a_{ij}\lvert x_j\rvert$ from largest to smallest;
+$\beta_i$ is the sum of the $\lfloor\Gamma_i\rfloor$ largest, plus the fraction
+$\Gamma_i - \lfloor\Gamma_i\rfloor$ of the next one. It is the worst extra load on row $i$
+when $\lfloor\Gamma_i\rfloor$ coefficients go fully wrong and one more goes partly wrong.
+
+As written, @eq-bs-model is not an LP: $\beta_i$ is a maximum over subsets. The next section
+removes the maximum.
+
+## From a max inside a constraint to an LP
+
+**Step 1: the subset choice is an LP** [@bertsimas2004, Proposition 1]. For a fixed $x$,
+
+$$
+\beta_i(x, \Gamma_i) \;=\; \max\Big\{ \sum_{j \in J_i} \hat a_{ij}\lvert x_j\rvert\, z_{ij} \;:\;
+\sum_{j \in J_i} z_{ij} \le \Gamma_i,\ \ 0 \le z_{ij} \le 1 \Big\}.
+$$ {#eq-beta-lp}
+
+The feasible set is a box cut by one budget constraint. Filling the budget greedily, with
+$z_{ij} = 1$ on the largest damages and a fractional $z$ on the next one, is optimal, and
+that is exactly @eq-protection. Read $z_{ij}$ as "how much coefficient $j$ deviates", so
+@eq-beta-lp is the worst case over the uncertainty set
+$U_i(\Gamma_i) = \{\bar a_i + \hat a_i \circ \eta : \lVert\eta\rVert_\infty \le 1,\ \lVert\eta\rVert_1 \le \Gamma_i\}$
+drawn in @fig-budget-sets.
+
+**Step 2: dualize.** @eq-beta-lp is a feasible, bounded LP, so by LP duality its value
+equals the value of its dual,
+
+$$
+\beta_i(x, \Gamma_i) \;=\; \min\Big\{ \Gamma_i\, z_i + \sum_{j \in J_i} p_{ij} \;:\;
+z_i + p_{ij} \ge \hat a_{ij}\lvert x_j\rvert \ \ \forall j \in J_i,\ \ z_i \ge 0,\ p_{ij} \ge 0 \Big\}.
+$$ {#eq-beta-dual}
+
+**Step 3: drop the min.** A constraint "something $+$ a minimum $\le b_i$" holds exactly when
+*some* feasible dual point satisfies it, so the minimization can be merged into the outer
+problem. Writing $\lvert x_j\rvert \le y_j$ with $-y_j \le x_j \le y_j$ gives the robust
+counterpart.
+
+::: {.callout-note appearance="simple"}
+**Theorem 1** [@bertsimas2004]. Model @eq-bs-model is equivalent to the linear program
+
+$$
+\begin{aligned}
+\max\;& c^\top x\\
+\text{s.t. }& \sum_j \bar a_{ij} x_j + \Gamma_i z_i + \sum_{j \in J_i} p_{ij} \le b_i && \forall i\\
+& z_i + p_{ij} \ge \hat a_{ij}\, y_j && \forall i,\ j \in J_i\\
+& -y_j \le x_j \le y_j && \forall j\\
+& l \le x \le u,\quad p_{ij} \ge 0,\ y_j \ge 0,\ z_i \ge 0 .
+\end{aligned}
+$$ {#eq-bs-lp}
+:::
+
+::: {.callout-tip collapse="true"}
+## Proof
+
+*If $(x, y, z, p)$ is feasible for @eq-bs-lp, then $x$ is feasible for @eq-bs-model.* Since
+$y_j \ge \lvert x_j\rvert$, the pair $(z_i, p_{i\cdot})$ is feasible for the dual
+@eq-beta-dual at $x$. By weak duality, $\Gamma_i z_i + \sum_j p_{ij} \ge \beta_i(x, \Gamma_i)$,
+so $\sum_j \bar a_{ij} x_j + \beta_i(x, \Gamma_i) \le b_i$.
+
+*If $x$ is feasible for @eq-bs-model, it extends to a feasible point of @eq-bs-lp.* Put
+$y_j = \lvert x_j\rvert$ and let $(z_i, p_{i\cdot})$ be an optimal solution of
+the dual @eq-beta-dual. By strong duality its value is exactly $\beta_i(x, \Gamma_i)$, so the first
+constraint of @eq-bs-lp holds.
+
+The two problems have the same feasible $x$ and the same objective, so they are equivalent. $\square$
+:::
+
+**What the new variables mean.** For a fixed $x$, the best dual choice is a threshold:
+$z_i$ is the $(\lfloor\Gamma_i\rfloor + 1)$-th largest damage and
+$p_{ij} = (\hat a_{ij}\lvert x_j\rvert - z_i)^+$ is how far damage $j$ sticks out above it.
+So $\beta_i = \min_{z \ge 0}\, \{\Gamma_i z + \sum_j (\hat a_{ij}\lvert x_j\rvert - z)^+\}$:
+pay $z$ for each unit of budget, plus whatever exceeds the threshold.
+
+**Why this matters.**
+
+- The robust problem is an LP of the same kind as the nominal one. It adds one $z_i$ per
+  row, one $p_{ij}$ per uncertain coefficient, and one $y_j$ per variable (none are needed
+  when $x \ge 0$). Each new constraint touches only three variables, so the sparsity of $A$
+  is kept.
+- Nothing in the derivation used continuity of $x$. If some $x_j$ must be integer,
+  @eq-bs-lp is a MIP with the same integer variables, and any MIP solver handles it. This
+  is the main practical advantage over the ellipsoidal model, which turns a MIP into a
+  mixed-integer conic program.
+
+```{python}
+#| label: thm1-check
+#| output: asis
+xr, vr = robust_lp((1.0, 1.0))
+beta = [protection(xr, AHAT[i], 1.0) for i in range(2)]
+print(f"*Check on the toy model.* With $\\Gamma_1 = \\Gamma_2 = 1$, solving @eq-bs-lp gives "
+      f"$x = ({xr[0]:.3f},\\ {xr[1]:.3f})$ with value {vr:.3f}, the same point as the "
+      f"$\\Gamma = 1$ optimum in @fig-budget-sets. There the protection terms are "
+      f"$\\beta_1 = {beta[0]:.3f}$ and $\\beta_2 = {beta[1]:.3f}$, and both rows are tight: "
+      f"${ABAR[0] @ xr:.3f} + {beta[0]:.3f} = {ABAR[0] @ xr + beta[0]:.2f}$ and "
+      f"${ABAR[1] @ xr:.3f} + {beta[1]:.3f} = {ABAR[1] @ xr + beta[1]:.2f}$.")
+```
+
+## Interactive: one budget per constraint
+
+Each row gets its own $\Gamma_i$, so protection can be spent where it is cheap. Move the two
+sliders and watch the robust region (blue), its optimum, and the two uncertainty sets.
+
+```{python}
+#| label: bs-ojs-data
+#| echo: false
+GRID = [round(0.1 * k, 1) for k in range(21)]
+reg, opt = [], []
+for g1 in GRID:
+    rr, oo = [], []
+    for g2 in GRID:
+        rr.append(fmt_poly(robust_region((g1, g2))))
+        x, v = robust_lp((g1, g2))
+        oo.append([round(float(x[0]), 4) + 0.0, round(float(x[1]), 4) + 0.0, round(float(v), 4)])
+    reg.append(rr); opt.append(oo)
+ojs_define(bsData=dict(
+    grid=GRID, region=reg, opt=opt,
+    U1=[fmt_poly(uncertainty_set(0, g)) for g in GRID],
+    U2=[fmt_poly(uncertainty_set(1, g)) for g in GRID],
+    abar=ABAR.tolist(), ahat=AHAT.tolist(),
+    nominal=fmt_poly(robust_region((0, 0))), soyster=fmt_poly(robust_region((2, 2))),
+), bsColors=COLORS)
+```
+
+```{ojs}
+//| echo: false
+viewof bsG1 = Inputs.range([0, 2], {step: 0.1, value: 1, label: "Γ₁ (row 1)"})
+```
+
+```{ojs}
+//| echo: false
+viewof bsG2 = Inputs.range([0, 2], {step: 0.1, value: 1, label: "Γ₂ (row 2)"})
+```
+
+```{ojs}
+//| echo: false
+bsChart = {
+  const D = bsData, C = bsColors;
+  const i1 = Math.round(bsG1 * 10), i2 = Math.round(bsG2 * 10);
+  const R = D.region[i1][i2], O = D.opt[i1][i2];
+  const W = 820, H = 400, mb = 40, mt = 14;
+  const svg = d3.create("svg").attr("viewBox", [0, 0, W, H])
+      .style("width", "100%").style("max-width", "820px")
+      .style("font-family", "inherit").style("font-size", "12px");
+
+  // ---- left panel: decision space ----
+  const x = d3.scaleLinear([0, 5.5], [44, 400]);
+  const y = d3.scaleLinear([0, 5.5], [H - mb, H - mb - (400 - 44)]);
+  const path = (pts, sx, sy) => "M" + pts.map(p => `${sx(p[0])},${sy(p[1])}`).join("L") + "Z";
+  for (const t of [1, 2, 3, 4, 5]) {
+    svg.append("line").attr("x1", x(t)).attr("x2", x(t)).attr("y1", y(0)).attr("y2", y(5.5))
+       .attr("stroke", C.grid).attr("stroke-opacity", 0.5).attr("stroke-width", 0.5);
+    svg.append("line").attr("y1", y(t)).attr("y2", y(t)).attr("x1", x(0)).attr("x2", x(5.5))
+       .attr("stroke", C.grid).attr("stroke-opacity", 0.5).attr("stroke-width", 0.5);
+  }
+  svg.append("g").attr("transform", `translate(0,${y(0)})`).call(d3.axisBottom(x).ticks(5));
+  svg.append("g").attr("transform", `translate(${x(0)},0)`).call(d3.axisLeft(y).ticks(5));
+  svg.append("text").attr("x", x(2.75)).attr("y", H - 6).attr("text-anchor", "middle")
+     .attr("fill", "currentColor").attr("font-size", 14).text("x₁");
+  svg.append("text").attr("x", 12).attr("y", y(2.75)).attr("text-anchor", "middle")
+     .attr("fill", "currentColor").attr("font-size", 14).text("x₂");
+  svg.append("path").attr("d", path(D.nominal, x, y)).attr("fill", "none")
+     .attr("stroke", "currentColor").attr("stroke-opacity", 0.6).attr("stroke-dasharray", "6 4");
+  svg.append("path").attr("d", path(R, x, y)).attr("fill", C.p1).attr("fill-opacity", 0.3)
+     .attr("stroke", C.p1).attr("stroke-width", 1.8);
+  svg.append("path").attr("d", path(D.soyster, x, y)).attr("fill", "none")
+     .attr("stroke", C.weak).attr("stroke-width", 1.4).attr("stroke-dasharray", "2 3");
+  // nominal optimum and robust optimum
+  const n0 = D.opt[0][0];
+  svg.append("circle").attr("cx", x(n0[0])).attr("cy", y(n0[1])).attr("r", 5)
+     .attr("fill", "none").attr("stroke", "currentColor").attr("stroke-width", 1.5)
+     .append("title").text(`nominal optimum (${n0[0]}, ${n0[1]}), value ${n0[2]}`);
+  const f3 = d3.format(".3f");
+  svg.append("circle").attr("cx", x(O[0])).attr("cy", y(O[1])).attr("r", 7)
+     .attr("fill", C.p1).attr("stroke", "white").attr("stroke-width", 1.5)
+     .append("title").text(`robust optimum (${f3(O[0])}, ${f3(O[1])}), value ${f3(O[2])}`);
+  // legend
+  const lg = svg.append("g").attr("transform", `translate(${x(3.0)},${y(5.35)})`);
+  const items = [["robust region", C.p1, null], ["nominal region", "currentColor", "6 4"],
+                 ["Soyster (Γ = 2, 2)", C.weak, "2 3"]];
+  items.forEach(([t, col, dash], k) => {
+    lg.append("line").attr("x1", 0).attr("x2", 22).attr("y1", k * 16).attr("y2", k * 16)
+      .attr("stroke", col).attr("stroke-width", 2).attr("stroke-dasharray", dash);
+    lg.append("text").attr("x", 28).attr("y", k * 16 + 4).attr("fill", "currentColor").text(t);
+  });
+
+  // ---- right panels: uncertainty sets of row 1 and row 2 ----
+  const panel = (k, U, G, top) => {
+    const ab = D.abar[k], ah = D.ahat[k], s = 150;
+    const px = d3.scaleLinear([ab[0] - 1.25 * ah[0], ab[0] + 1.25 * ah[0]], [500, 500 + s * (ah[0] / Math.max(ah[0], ah[1]))]);
+    const py = d3.scaleLinear([ab[1] - 1.25 * ah[1], ab[1] + 1.25 * ah[1]], [top + s * (ah[1] / Math.max(ah[0], ah[1])), top]);
+    const box = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(e => [ab[0] + ah[0] * e[0], ab[1] + ah[1] * e[1]]);
+    svg.append("path").attr("d", path(box, px, py)).attr("fill", "none")
+       .attr("stroke", C.weak).attr("stroke-dasharray", "2 3").attr("stroke-width", 1.2);
+    if (U.length >= 3) {
+      svg.append("path").attr("d", path(U, px, py)).attr("fill", C.p1).attr("fill-opacity", 0.35)
+         .attr("stroke", C.p1).attr("stroke-width", 1.6);
+    }
+    svg.append("circle").attr("cx", px(ab[0])).attr("cy", py(ab[1])).attr("r", 3.5).attr("fill", "currentColor");
+    const x0 = px.range()[0], x1 = px.range()[1], yb = py.range()[0];
+    svg.append("g").attr("transform", `translate(0,${yb})`)
+       .call(d3.axisBottom(px).tickValues([ab[0] - ah[0], ab[0], ab[0] + ah[0]]).tickFormat(d3.format(".1f")));
+    svg.append("g").attr("transform", `translate(${x0},0)`)
+       .call(d3.axisLeft(py).tickValues([ab[1] - ah[1], ab[1], ab[1] + ah[1]]).tickFormat(d3.format(".1f")));
+    svg.append("text").attr("x", x1 + 12).attr("y", top + 12).attr("fill", "currentColor")
+       .attr("font-size", 13).text(`U${k === 0 ? "₁" : "₂"}(Γ = ${G.toFixed(1)})`);
+    svg.append("text").attr("x", x1 + 12).attr("y", top + 30).attr("fill", "currentColor")
+       .attr("opacity", 0.75).text(`row ${k + 1}: (${ab[0]} ± ${ah[0]}) x₁`);
+    svg.append("text").attr("x", x1 + 12).attr("y", top + 46).attr("fill", "currentColor")
+       .attr("opacity", 0.75).text(`+ (${ab[1]} ± ${ah[1]}) x₂ ≤ ${k === 0 ? 10 : 15}`);
+  };
+  panel(0, D.U1[i1], bsG1, 20);
+  panel(1, D.U2[i2], bsG2, 210);
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+bsText = {
+  const D = bsData, O = D.opt[Math.round(bsG1 * 10)][Math.round(bsG2 * 10)];
+  const nom = D.opt[0][0][2], f = d3.format(".3f"), p = d3.format(".1f");
+  const words = g => g === 0 ? "no coefficient" : g < 1 ? `a fraction ${g.toFixed(1)} of one coefficient`
+       : g === 1 ? "one coefficient" : g < 2 ? `one coefficient fully and ${(g - 1).toFixed(1)} of the other` : "both coefficients";
+  const div = html`<div></div>`;
+  div.innerHTML = `Robust optimum <b>(${f(O[0])}, ${f(O[1])})</b>, objective <b>${f(O[2])}</b>,
+    which is <b>${p(100 * (nom - O[2]) / nom)}%</b> below the nominal value ${nom}.<br>
+    Row 1 is protected against ${words(bsG1)} going wrong; row 2 against ${words(bsG2)}.`;
+  return div;
+}
+```
+
+::: {.callout-note collapse="true"}
+## Static version of this figure (for printing)
+
+```{python}
+#| label: fig-bs-static
+#| fig-cap: "Robust region and optimum for three choices of per-row budgets. Protecting only row 1 (middle) or only row 2 (right) costs less than protecting both."
+fig, axes = plt.subplots(1, 3, figsize=(11, 3.9))
+for ax, gg in zip(axes, [(1.0, 1.0), (2.0, 0.0), (0.0, 2.0)]):
+    ax.set_xlim(0, 5.5); ax.set_ylim(0, 5.5); ax.set_aspect("equal")
+    ax.grid(True, color=COLORS["grid"], lw=0.5, alpha=0.5)
+    ax.set_xlabel(r"$x_1$"); ax.set_ylabel(r"$x_2$")
+    nom = np.array(robust_region((0, 0)))
+    ax.plot(*np.vstack([nom, nom[:1]]).T, color="0.4", ls="--", lw=1)
+    shade_polygon(ax, robust_region(gg), COLORS["p1"], alpha=0.3)
+    x, v = robust_lp(gg)
+    mark_point(ax, x, COLORS["p1"])
+    ax.set_title(rf"$\Gamma_1 = {gg[0]:g},\ \Gamma_2 = {gg[1]:g}$: value {v:.2f}")
+fig.tight_layout()
+plt.show()
+```
+:::
+
+## How likely is a violation?
+
+The model protects row $i$ *for certain* as long as at most $\lfloor\Gamma_i\rfloor$
+coefficients deviate (and one more partly). What if more of them deviate? Suppose the
+deviations are random:
+
+$$
+\tilde a_{ij} = \bar a_{ij} + \eta_{ij}\,\hat a_{ij}, \qquad
+\eta_{ij} \text{ independent, symmetric around } 0, \text{ with values in } [-1, 1].
+$$
+
+Let $x^*$ be optimal for @eq-bs-lp and $n = \lvert J_i\rvert$. @bertsimas2004 prove two
+bounds on the probability that row $i$ is violated at $x^*$.
+
+::: {.callout-note appearance="simple"}
+**Theorem 2** [@bertsimas2004]. $\displaystyle \Pr\Big(\sum_j \tilde a_{ij} x_j^* > b_i\Big) \le \exp\!\Big(-\frac{\Gamma_i^2}{2n}\Big).$
+
+**Theorem 3** [@bertsimas2004]. $\displaystyle \Pr\Big(\sum_j \tilde a_{ij} x_j^* > b_i\Big) \le B(n, \Gamma_i)$, where
+
+$$
+B(n, \Gamma) = \frac{1}{2^n}\Big[(1 - \mu)\sum_{l = \lfloor\nu\rfloor}^{n} \binom{n}{l} + \mu \sum_{l = \lfloor\nu\rfloor + 1}^{n} \binom{n}{l}\Big],
+\qquad \nu = \frac{\Gamma + n}{2},\quad \mu = \nu - \lfloor\nu\rfloor .
+$$
+
+The bound is tight: it is attained when the $\eta_{ij}$ are $\pm 1$ with probability $\tfrac12$
+each (for integer $\Gamma_i \geq 1$ with $n + \Gamma_i$ even). For large $n$,
+$B(n, \Gamma) \approx 1 - \Phi\big((\Gamma - 1)/\sqrt n\big)$, where $\Phi$ is the standard
+normal distribution function.
+:::
+
+Two things stand out. First, **the bounds do not depend on $x^*$**: they depend only on
+$\Gamma_i$ and on how many coefficients are uncertain. The modeller can choose $\Gamma_i$
+from a target violation probability before solving anything. Second, **$\Gamma_i$ only has to
+grow like $\sqrt n$**. A violation probability of $\varepsilon$ needs roughly
+$\Gamma_i \approx 1 + \Phi^{-1}(1 - \varepsilon)\sqrt n$, a vanishing share of the $n$
+coefficients when $n$ is large.
+
+```{python}
+#| label: tbl-gamma-needed
+#| tbl-cap: "Smallest budget $\\Gamma$ with $B(n, \\Gamma)$ at most 1% or 0.1%, computed from Theorem 3. The share $\\Gamma/n$ falls like $1/\\sqrt n$."
+rows = []
+for n in (10, 20, 50, 100, 200, 500, 1000):
+    g1, g2 = gamma_for(n, 0.01), gamma_for(n, 0.001)
+    rows.append(f"| {n} | {g1:.1f} | {100 * g1 / n:.0f}% | {g2:.1f} | {100 * g2 / n:.0f}% |")
+Markdown("| $n$ uncertain coefficients | $\\Gamma$ for 1% | $\\Gamma / n$ | $\\Gamma$ for 0.1% | $\\Gamma / n$ |\n"
+         "|---:|---:|---:|---:|---:|\n" + "\n".join(rows))
+```
+
+::: {.callout-tip collapse="true"}
+## Proof sketch of Theorem 2
+
+Write $d_j = \hat a_{ij}\lvert x^*_j\rvert$ for the possible damages and drop the index $i$.
+Because each $\eta_j$ is symmetric, flipping its sign when $x^*_j < 0$ does not change any
+probability, so row $i$ is violated with probability
+$\Pr\big(\sum_j \eta_j d_j > \beta(x^*, \Gamma)\big)$, using
+$\sum_j \bar a_j x^*_j + \beta \le b$.
+
+*Reduce to a sum with unit weights* [@bertsimas2004, Proposition 2]. Let $S^*$ and $t^*$ be the
+maximizers in @eq-protection, so $\beta = \sum_{j \in S^*} d_j + (\Gamma - \lfloor\Gamma\rfloor)d_{t^*}$,
+and let $d_{r}$ be the smallest damage among $S^* \cup \{t^*\}$ (assume $d_r > 0$). Every
+damage outside $S^*$ is at most $d_r$. Then
+
+$$
+\sum_j \eta_j d_j - \beta
+= \sum_{j \in S^*} (\eta_j - 1) d_j + \sum_{j \notin S^*} \eta_j d_j - (\Gamma - \lfloor\Gamma\rfloor) d_{t^*}
+\le d_r\Big[\sum_{j \in S^*} (\eta_j - 1) + \sum_{j \notin S^*} \mu_j \eta_j - (\Gamma - \lfloor\Gamma\rfloor)\Big],
+$$
+
+with weights $\mu_j = d_j / d_r \le 1$ (using $\eta_j - 1 \le 0$ and $d_j \ge d_r$ on $S^*$). So a
+violation forces $\sum_j \mu_j \eta_j > \Gamma$, with $\mu_j = 1$ on $S^*$ and
+$\mu_j \le 1$ elsewhere.
+
+*Bound that event.* For any $\theta > 0$, by Markov's inequality and independence,
+
+$$
+\Pr\Big(\sum_j \mu_j \eta_j \ge \Gamma\Big)
+\le e^{-\theta\Gamma}\prod_j \mathbb{E}\big[e^{\theta\mu_j\eta_j}\big]
+\le e^{-\theta\Gamma}\prod_j \cosh(\theta)
+\le e^{-\theta\Gamma + n\theta^2/2}.
+$$
+
+The middle step uses symmetry ($\mathbb{E}[e^{s\eta}] = \mathbb{E}[\cosh(s\eta)] \le \cosh s$
+for $\lvert\eta\rvert \le 1$, $\lvert s\rvert \le \theta$) and the last uses
+$\cosh\theta \le e^{\theta^2/2}$. Choosing $\theta = \Gamma/n$ gives $e^{-\Gamma^2/(2n)}$.
+Theorem 3 sharpens the second step by comparing with the worst case, symmetric $\pm 1$
+variables, and counting binomial outcomes.
+:::
+
+## The price of robustness: a knapsack experiment
+
+How much objective does protection cost in a problem with many uncertain coefficients? The
+following experiment is in the spirit of Section 6.1 of @bertsimas2004, on our own random
+instance. There are 200 items with nominal weights drawn from $\{20, \dots, 29\}$ and values
+from $\{16, \dots, 77\}$, a capacity of 4000, and every weight uncertain by $\pm 10\%$:
+
+$$
+\max \sum_j c_j x_j \quad\text{s.t.}\quad \sum_j \tilde w_j x_j \le 4000, \quad x \in \{0, 1\}^{200}.
+$$
+
+For each $\Gamma$ we solve the robust counterpart @eq-bs-lp (a MIP; $y = x$ since $x \ge 0$)
+and then draw 20,000 random weight vectors to see how often the chosen load really exceeds
+the capacity.
+
+```{python}
+#| label: knapsack-runs
+#| output: false
+c, w, what, cap = knapsack_instance()
+N = len(c)
+GK = list(range(0, 61, 2)) + list(range(70, 201, 10))
+KN = []
+for g in GK:
+    xg, vg = robust_knapsack(c, w, what, cap, g)
+    KN.append(dict(g=g, v=vg, items=int(xg.sum()),
+                   sim_pm=violation_rate(xg, w, what, cap, kind="pm1"),
+                   sim_un=violation_rate(xg, w, what, cap, kind="uniform"),
+                   B=bound_B(N, g), E=bound_exp(N, g)))
+V0 = KN[0]["v"]
+```
+
+```{python}
+#| label: fig-knapsack
+#| fig-cap: "The price of robustness on a 200-item knapsack. Left: loss of objective relative to the nominal solution. Right: probability that the robust solution overloads the knapsack: the bounds of Theorems 2 and 3 (lines) and simulated rates for $\\pm 1$ and uniform deviations (markers; rates below 1 in 20,000 are not shown). Notice that the bound reaches 1% while the objective has dropped by only about 1%; full protection costs several times more."
+G = np.array([r["g"] for r in KN])
+loss = np.array([100 * (V0 - r["v"]) / V0 for r in KN])
+fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+ax = axes[0]
+ax.plot(G, loss, "-o", color=COLORS["p1"], ms=3.5)
+ax.axhline(loss[-1], color=COLORS["weak"], ls=":", lw=1.2)
+ax.text(200, loss[-1] + 0.15, f"Soyster (full protection): {loss[-1]:.1f}%", ha="right",
+        color=COLORS["weak"], fontsize=9.5)
+ax.set_xlabel(r"budget $\Gamma$"); ax.set_ylabel("objective loss vs. nominal (%)")
+ax.set_ylim(0, loss[-1] * 1.25); ax.grid(True, color=COLORS["grid"], lw=0.5, alpha=0.5)
+
+ax = axes[1]
+gg = np.linspace(0, 120, 241)
+ax.semilogy(gg, [bound_exp(N, t) for t in gg], color=COLORS["grid"], lw=1.6, ls="--",
+            label="Theorem 2: $e^{-\\Gamma^2/2n}$")
+ax.semilogy(gg, [bound_B(N, t) for t in gg], color=COLORS["text"], lw=1.6,
+            label=r"Theorem 3: $B(n, \Gamma)$")
+pm = np.array([r["sim_pm"] for r in KN]); un = np.array([r["sim_un"] for r in KN])
+ax.semilogy(G[pm > 0], pm[pm > 0], "o", color=COLORS["p2"], ms=4.5, label=r"simulated, $\pm 1$")
+ax.semilogy(G[un > 0], un[un > 0], "s", color=COLORS["hull"], ms=4, label="simulated, uniform")
+ax.set_xlim(0, 120); ax.set_ylim(1e-5, 1)
+ax.set_xlabel(r"budget $\Gamma$"); ax.set_ylabel("probability of overload")
+ax.grid(True, color=COLORS["grid"], lw=0.5, alpha=0.5, which="major")
+ax.legend(fontsize=8.5, loc="upper right", frameon=True, framealpha=0.9)
+fig.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: tbl-knapsack
+#| tbl-cap: "Selected budgets from the knapsack experiment. The bound is $B(200, \\Gamma)$ from Theorem 3; the simulated rates use 20,000 draws."
+pick = [0, 10, 20, 30, 40, 50, 60, 100, 200]
+rows = []
+for r in KN:
+    if r["g"] in pick:
+        rows.append(f"| {r['g']} | {r['v']:.0f} | {100 * (V0 - r['v']) / V0:.2f}% | {r['items']} | "
+                    f"{r['B']:.2g} | {r['sim_pm']:.2g} | {r['sim_un']:.2g} |")
+Markdown("| $\\Gamma$ | value | loss | items | bound $B$ | simulated $\\pm1$ | simulated uniform |\n"
+         "|---:|---:|---:|---:|---:|---:|---:|\n" + "\n".join(rows))
+```
+
+```{python}
+#| label: knapsack-summary
+#| output: asis
+g1 = next(r for r in KN if r["B"] <= 0.01)
+print(f"The pattern matches what @bertsimas2004 report for their instance. Here the nominal "
+      f"solution overloads the knapsack about half the time. Full protection removes that risk "
+      f"but loses {100 * (V0 - KN[-1]['v']) / V0:.1f}% of the value. The smallest budget on our "
+      f"grid with a 1% guarantee, $\\Gamma = {g1['g']}$, loses only "
+      f"{100 * (V0 - g1['v']) / V0:.2f}%. (In the paper, full protection cost 5.5% and a "
+      f"guarantee of about 0.57% cost 1.54%.) The simulated rates sit below the bound, and "
+      f"the $\\pm 1$ deviations, the worst case for Theorem 3, come closest to it.")
+```
+
+## Beyond the basic model
+
+- **Discrete problems.** Because @eq-bs-lp keeps the problem class, the budget model is
+  routinely used inside MIPs. For 0–1 problems whose *costs* are uncertain, @bertsimas2003
+  showed that the robust problem can be solved by solving $n + 1$ nominal problems, so a
+  polynomially solvable problem (shortest path, minimum spanning tree, ...) stays
+  polynomially solvable.
+- **Correlated data** [@bertsimas2004, Section 5]. If the coefficients of a row are driven
+  by a few common factors, $\tilde a_{ij} = \bar a_{ij} + \sum_{k \in K_i} \eta_{ik} g_{kj}$,
+  the budget is put on the factors $\eta_{ik}$ instead. The counterpart is again an LP, and
+  the bound becomes $B(\lvert K_i\rvert, \Gamma_i)$.
+- **Which budget to raise?** Under nondegeneracy, the derivative of the optimal value with
+  respect to $\Gamma_i$ is $-z_i^* q_i^*$, where $z_i^*$ is the threshold variable of row $i$
+  in @eq-bs-lp and $q_i^*$ is the dual price of that row [@bertsimas2004, Theorem 4]. Rows
+  with a small product are cheap to protect.
+
+## In practice
+
+- **Pick $\Gamma_i$ from a target probability.** Choose the largest violation probability
+  you can accept for row $i$, and read $\Gamma_i$ off
+  $B(\lvert J_i\rvert, \Gamma_i)$, as in @tbl-gamma-needed. Joint guarantees for several rows follow from a union bound.
+- **Many uncertain coefficients per row is where it pays.** The saving over Soyster comes
+  from errors cancelling, which needs many of them. With only a handful of uncertain
+  coefficients in a row, a meaningful guarantee needs $\Gamma_i$ close to
+  $\lvert J_i\rvert$, and the result is close to the box model. @bertsimas2004 saw this on
+  a NETLIB problem whose rows had at most 29 uncertain entries.
+- **Check the assumptions.** The guarantees assume independent, symmetric, bounded
+  deviations. The deterministic guarantee (any $\lfloor\Gamma_i\rfloor$ coefficients) holds
+  without them.
+- **Static decisions.** All of $x$ is chosen before the data are seen. Problems with
+  recourse are closer to [stochastic programming](../stochastic-programming/index.qmd).
+
+## Further reading
+
+- Paper notes: [Bertsimas & Sim (2004), The Price of Robustness](papers/bertsimas-2004.qmd).
+- Previous page: [Uncertainty Sets and Robust Counterparts](introduction.qmd).
+- The polyhedral norm behind the budget set, and robust LP under general norms: see @bertsimas2004norms.
+  For a survey of the field, see @bertsimas2011.
