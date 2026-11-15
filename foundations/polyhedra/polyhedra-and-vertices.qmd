@@ -1,0 +1,208 @@
+---
+kind: topic
+title: "Polyhedra and Their Vertices"
+description: "What a polyhedron is, three equivalent definitions of a vertex, and why an LP optimum can always be found at one."
+categories: [foundations, polyhedra, linear-programming]
+order: 1
+level: intro
+prerequisites: "Convex sets; rank and linear independence"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from _lib.orplot import new_axes, shade_polygon, clip_halfplane, mark_point, COLORS
+
+# Running example: x1, x2 >= 0, x1 + 2 x2 <= 8, 2 x1 + x2 <= 7
+A = np.array([[-1, 0], [0, -1], [1, 2], [2, 1]], float)
+b = np.array([0, 0, 8, 7], float)
+names = [r"$x_1 \geq 0$", r"$x_2 \geq 0$", r"$x_1 + 2x_2 \leq 8$", r"$2x_1 + x_2 \leq 7$"]
+
+def polygon(A, b, box=12):
+    V = [(-box, -box), (box, -box), (box, box), (-box, box)]
+    for a, beta in zip(A, b):
+        V = clip_halfplane(V, a, beta)
+    return V
+
+def draw_line(ax, a, beta, xlim, **kw):
+    if abs(a[1]) > 1e-9:
+        xs = np.array(xlim, float)
+        ax.plot(xs, (beta - a[0] * xs) / a[1], **kw)
+    else:
+        ax.axvline(beta / a[0], **kw)
+```
+
+## The idea
+
+A **polyhedron** is what you get by writing down finitely many linear inequalities:
+$$
+P = \{x \in \mathbb{R}^n : Ax \le b\}.
+$$
+Every LP feasible region is one. Geometrically it is an intersection of half-spaces, so
+it is convex, with flat sides and sharp corners. A bounded polyhedron is a **polytope**.
+
+The corners are called **vertices**, and they are where the action is: the simplex
+method walks from vertex to vertex, and an LP optimum can always be found at one. This
+page explains what a vertex is in algebraic terms, so that "corner" becomes something a
+computer can test.
+
+```{python}
+#| label: fig-polygon
+#| fig-cap: "The polyhedron $x_1, x_2 \\ge 0$, $x_1 + 2x_2 \\le 8$, $2x_1 + x_2 \\le 7$. Each vertex (filled) is where two of the four constraint lines meet *inside* $P$. The hollow points are also intersections of two constraint lines, but they violate another constraint: basic, but not feasible. Maximizing $x_1 + x_2$ (dashed level lines) ends at the vertex $(2, 3)$."
+V = polygon(A, b)
+fig, ax = new_axes(1, xlim=(-0.5, 8.5), ylim=(-0.5, 8.5), size=4.6)
+for (a, beta), col in zip(zip(A[2:], b[2:]), [COLORS["p1"], COLORS["p2"]]):
+    draw_line(ax, a, beta, (-0.5, 8.5), color=col, lw=1, alpha=0.6)
+shade_polygon(ax, V, "#888888", alpha=0.18, lw=1.8)
+for lev in (2, 3.5, 5):
+    draw_line(ax, np.array([1, 1.0]), lev, (-0.5, 8.5), color=COLORS["hull"],
+              lw=1, ls="--", alpha=0.7)
+ax.annotate("", xy=(3.0, 4.0), xytext=(2.0, 3.0),
+            arrowprops=dict(arrowstyle="->", color=COLORS["hull"], lw=1.5))
+ax.text(3.05, 4.05, "$c = (1,1)$", color=COLORS["hull"], fontsize=10)
+for v in [(0, 0), (3.5, 0), (2, 3), (0, 4)]:
+    mark_point(ax, v, "black", size=40)
+for v in [(8, 0), (0, 7)]:
+    ax.scatter(*v, s=45, facecolor="white", edgecolor="black", zorder=5, lw=1.3)
+ax.annotate("(2, 3)", (2, 3), xytext=(-34, -14), textcoords="offset points")
+ax.annotate("basic,\ninfeasible", (8, 0), xytext=(-52, 12), textcoords="offset points",
+            fontsize=9)
+ax.text(5.6, 1.6, names[2], color=COLORS["p1"], fontsize=9, rotation=-27)
+ax.text(1.0, 5.6, names[3], color=COLORS["p2"], fontsize=9, rotation=-63)
+plt.show()
+```
+
+## The math
+
+### Three definitions of a vertex
+
+Write $a_i^\top x \le b_i$ for the $i$-th row of $Ax \le b$. At a point $x \in P$, a
+constraint is **active** (or tight) if it holds with equality, $a_i^\top x = b_i$.
+
+::: {.callout-important}
+## Theorem (vertices)
+Let $P = \{x \in \mathbb{R}^n : Ax \le b\}$ and $x \in P$. The following are equivalent.
+
+1. **Vertex.** Some linear objective $c^\top y$ is maximized over $P$ at $x$ and at no
+   other point.
+2. **Extreme point.** $x$ is not the midpoint of two different points of $P$.
+3. **Basic feasible solution.** Among the constraints active at $x$, there are $n$
+   linearly independent ones.
+:::
+
+Definition 1 is about optimization, definition 2 about geometry, and definition 3 is
+pure linear algebra. That last one is what algorithms use: a vertex is the unique
+solution of $n$ independent equations $a_i^\top x = b_i$ chosen from the rows of $A$ that
+also satisfies the other inequalities. In the figure, $(2, 3)$ solves
+$x_1 + 2x_2 = 8$ and $2x_1 + x_2 = 7$; the point $(8, 0)$ solves $x_1 + 2x_2 = 8$ and
+$x_2 = 0$ but violates $2x_1 + x_2 \le 7$.
+
+Two consequences follow at once.
+
+- **Finitely many vertices.** Each vertex is fixed by a choice of $n$ rows out of $m$, so
+  there are at most $\binom{m}{n}$ of them. That bound can be huge, but it is finite.
+- **Not every polyhedron has a vertex.** A polyhedron has at least one vertex if and only
+  if it contains no entire line. Such a polyhedron is called **pointed**. Every LP in
+  standard form ($x \ge 0$) is pointed.
+
+```{python}
+#| label: fig-shapes
+#| fig-cap: "Left: a polytope (bounded). Middle: an unbounded but pointed polyhedron, which still has vertices. Right: the strip $2 \\le x_1 + x_2 \\le 5$ contains whole lines, so it has no vertex at all."
+fig, axes = new_axes(3, xlim=(0, 6), ylim=(0, 6), size=3.2)
+shapes = [
+    [([-1, 0], -0.8), ([0, -1], -0.8), ([1, 1], 5), ([1, -1], 2.5), ([-1, 1], 2.5)],
+    [([-1, 0], -0.8), ([0, -1], -0.8), ([-1, -1], -3), ([-1, 2], 5.5)],
+    [([1, 1], 5.0), ([-1, -1], -2.0)],
+]
+titles = ["Polytope", "Unbounded, pointed", "Contains a line: no vertex"]
+for ax, cons, title in zip(axes, shapes, titles):
+    Ac = np.array([c[0] for c in cons], float)
+    bc = np.array([c[1] for c in cons], float)
+    Q = polygon(Ac, bc)
+    shade_polygon(ax, Q, COLORS["p1"], alpha=0.3)
+    # vertices: intersections of two constraint lines that are feasible
+    for i in range(len(Ac)):
+        for j in range(i + 1, len(Ac)):
+            M = Ac[[i, j]]
+            if abs(np.linalg.det(M)) < 1e-9:
+                continue
+            v = np.linalg.solve(M, bc[[i, j]])
+            if np.all(Ac @ v <= bc + 1e-9) and np.all((0 <= v) & (v <= 6)):
+                mark_point(ax, v, "black", size=30)
+    ax.set_title(title, fontsize=11)
+fig.tight_layout()
+plt.show()
+```
+
+### Faces
+
+Vertices are the smallest pieces of a hierarchy. An inequality $c^\top x \le \delta$ is
+**valid** for $P$ if every point of $P$ satisfies it. The set where it is tight,
+$F = P \cap \{x : c^\top x = \delta\}$, is a **face** of $P$. Vertices are the faces of
+dimension 0, **edges** have dimension 1, and **facets** have dimension
+$\dim P - 1$. Facets are the inequalities a description of $P$ cannot do without. They
+are the strongest possible cutting planes in integer programming.
+
+### Optimizing over a polyhedron
+
+::: {.callout-important}
+## Theorem (an optimum at a vertex)
+Let $P$ be a nonempty pointed polyhedron and suppose $\max\{c^\top x : x \in P\}$ is
+finite. Then the maximum is attained at a vertex of $P$.
+:::
+
+So an LP has finitely many candidates for the optimum. That alone gives a (very slow)
+algorithm: list all vertices and compare. The simplex method is the clever version: it
+moves from a vertex to an adjacent one along an edge while the objective improves.
+Details are on the linear programming pages.
+
+## Why it works
+
+::: {.callout-tip collapse="true"}
+## Proof sketch: the three definitions agree
+**(3) ⇒ (2).** Let $I$ be the active rows at $x$ and suppose $x = \tfrac12(y + z)$ with
+$y, z \in P$. For $i \in I$, $a_i^\top y \le b_i$ and $a_i^\top z \le b_i$ average to
+$a_i^\top x = b_i$, so both are equalities. Then $y$ and $z$ solve the same $n$
+independent equations as $x$, so $y = z = x$.
+
+**(2) ⇒ (3).** If the active rows span fewer than $n$ dimensions, pick $d \ne 0$
+orthogonal to all of them. Inactive constraints have slack, so $x \pm \varepsilon d \in P$
+for small $\varepsilon > 0$, and $x$ is their midpoint.
+
+**(3) ⇒ (1).** Let $c = \sum_{i \in I} a_i$. For $y \in P$,
+$c^\top y = \sum_{i \in I} a_i^\top y \le \sum_{i \in I} b_i = c^\top x$, with equality
+only if all rows in $I$ are tight at $y$, which forces $y = x$.
+
+**(1) ⇒ (2).** If $x = \tfrac12(y + z)$ with $y \ne z$ in $P$, then
+$c^\top x$ is the average of $c^\top y$ and $c^\top z$, so one of them is at least
+$c^\top x$, and $x$ is not the unique maximizer.
+:::
+
+::: {.callout-tip collapse="true"}
+## Proof sketch: an optimum at a vertex
+Start from any optimal $x$. If it is not a vertex, take a direction $d \ne 0$ orthogonal
+to its active rows, as above. Both $x + \varepsilon d$ and $x - \varepsilon d$ are feasible
+for small $\varepsilon$, and $x$ is optimal, so $c^\top d = 0$: moving along $d$ does not
+change the objective. Since $P$ contains no line, moving along $d$ or $-d$ eventually
+makes a new constraint active. The point reached is still optimal, and its active rows
+have higher rank. After at most $n$ such steps we reach an optimal vertex.
+:::
+
+## In practice
+
+- **Basic solutions are how solvers think.** A simplex basis is exactly a choice of $n$
+  independent active constraints (in standard form: which variables are nonbasic and
+  sit at zero).
+- **Degeneracy.** If more than $n$ constraints are active at a vertex, several bases
+  describe the same point. The simplex method can then pivot without moving.
+- **Integer programming.** If every vertex of the LP relaxation is integral, solving the
+  LP solves the integer program. Totally unimodular matrices, as in network flows, have
+  this property.
+
+## Further reading
+
+- @schrijver1986, Chapters 7–8: faces, vertices and the decomposition of polyhedra.
+- @ziegler1995, Chapters 1–2: polytopes and their faces, with many pictures.
+- Previous: [Separating Hyperplanes](../convexity/separating-hyperplanes.qmd). Next:
+  [The Minkowski–Weyl Theorem](minkowski-weyl.qmd).

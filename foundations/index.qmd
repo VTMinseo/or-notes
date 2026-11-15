@@ -1,0 +1,44 @@
+---
+kind: category
+title: "Foundations"
+description: "Convexity, polyhedra and Farkas' lemma: the geometry the rest of the site builds on."
+order: 0
+toc: false
+listing:
+  - id: subcats
+    contents: "**/*.qmd"
+    include:
+      kind: subcategory
+    type: table
+    sort: "order"
+    fields: [title, description]
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "title"
+    fields: [title, description, categories]
+---
+
+Almost every result in Operations Research comes from a few geometric facts:
+
+- **convexity** makes local information global (a local minimum of a convex function is
+  a global one);
+- **separating hyperplanes** turn "this point is not in the set" into a *certificate*;
+- **polyhedra** have two descriptions, by inequalities or by vertices and rays, and an
+  LP optimum can always be found at a vertex;
+- **Farkas' lemma** is separation for polyhedral cones, and LP duality grows out of it.
+
+These pages give the ideas and the main theorems with pictures. Proofs are short sketches
+in collapsed boxes. For full proofs, see the books listed at the bottom of each page.
+
+## Subcategories
+
+::: {#subcats}
+:::
+
+## All topics in this category
+
+::: {#topics}
+:::

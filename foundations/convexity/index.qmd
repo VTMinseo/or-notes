@@ -1,0 +1,26 @@
+---
+kind: subcategory
+title: "Convexity"
+description: "Convex sets, convex functions, and the separating hyperplane theorem."
+order: 1
+toc: false
+listing:
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "order"
+    fields: [title, description, categories]
+---
+
+A set is **convex** if it contains the segment between any two of its points. Convexity
+is what makes optimization tractable: a convex problem has no misleading local optima,
+and a point outside a convex set can always be cut off by a hyperplane.
+
+Read the pages in order. Each one uses the previous.
+
+## Topics
+
+::: {#topics}
+:::

@@ -1,0 +1,299 @@
+---
+kind: topic
+title: "Farkas' Lemma"
+description: "Either a linear system has a nonnegative solution, or a single vector proves it has none. The theorem behind LP duality."
+categories: [foundations, polyhedra, duality]
+order: 3
+level: intro
+prerequisites: "Cones; separating hyperplanes"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from _lib.orplot import new_axes, shade_polygon, clip_halfplane, mark_point, COLORS
+
+a1, a2 = np.array([2.0, 1.0]), np.array([1.0, 3.0])
+A = np.c_[a1, a2]
+LIM, BLEN = 4.0, 3.0
+
+def clip_box(poly, lim=LIM):
+    for a, beta in [((1, 0), lim), ((-1, 0), lim), ((0, 1), lim), ((0, -1), lim)]:
+        poly = clip_halfplane(poly, a, beta)
+    return poly
+
+def line_through_origin(normal, lim=LIM):
+    """Endpoints of {z : normal . z = 0} inside the box [-lim, lim]^2."""
+    d = np.array([-normal[1], normal[0]]) / np.linalg.norm(normal)
+    t = lim / max(abs(d[0]), abs(d[1]))
+    return [list(-t * d), list(t * d)]
+
+def farkas_case(theta_deg):
+    """Solve 'b in cone(a1, a2)?' for b at the given angle; return the picture data."""
+    th = np.deg2rad(theta_deg)
+    b = BLEN * np.array([np.cos(th), np.sin(th)])
+    x = np.linalg.solve(A, b)
+    if np.all(x >= -1e-12):
+        return dict(theta=int(theta_deg), b=b.tolist(), inside=True,
+                    x=np.round(np.maximum(x, 0), 3).tolist(),
+                    parts=[(x[0] * a1).tolist(), (x[1] * a2).tolist()])
+    # b is outside: project b onto the cone; y = p - b is the Farkas certificate
+    cands = [np.zeros(2)] + [max(0.0, b @ a / (a @ a)) * a for a in (a1, a2)]
+    p = min(cands, key=lambda q: np.linalg.norm(b - q))
+    y = p - b
+    y = y / np.linalg.norm(y)
+    return dict(theta=int(theta_deg), b=b.tolist(), inside=False,
+                p=p.tolist(), y=y.tolist(), line=line_through_origin(y),
+                ya1=round(float(y @ a1), 2), ya2=round(float(y @ a2), 2),
+                yb=round(float(y @ b), 2))
+
+CONE = [tuple(v) for v in clip_box([(0, 0), tuple(9 * a1), tuple(9 * a2)])]
+```
+
+## The idea
+
+You are given some vectors $a_1, \dots, a_n$ and a target $b$. Can you reach $b$ by adding
+**nonnegative** multiples of the $a_j$? In other words, is $b$ in the cone they generate?
+
+If yes, the multipliers prove it: anyone can check $b = \sum_j x_j a_j$ with $x \ge 0$.
+**Farkas' lemma** says that if no, there is an equally checkable proof of *that*: a
+single vector $y$ that makes a non-negative inner product with every $a_j$ but a
+negative one with $b$. Geometrically, $y$ is the normal of a hyperplane through the
+origin with all the $a_j$ on one side and $b$ on the other.
+
+The result is due to @farkas1902. It is the separating hyperplane theorem, specialized
+to cones, and everything about LP duality follows from it.
+
+```{python}
+#| label: farkas-ojs-data
+#| echo: false
+farkas = [farkas_case(t) for t in range(0, 360, 5)]
+ojs_define(farkas=farkas, farkasCone=[list(v) for v in CONE],
+           farkasA=[a1.tolist(), a2.tolist()], farkasColors=COLORS, farkasLim=LIM)
+```
+
+::: {.callout-tip appearance="simple"}
+**Interactive.** Turn the target $b$ with the slider. Inside the blue cone, $b$ splits
+into nonnegative multiples of $a_1$ and $a_2$. Outside, the orange vector $y$ and its
+dashed hyperplane are the Farkas certificate.
+:::
+
+```{ojs}
+//| echo: false
+viewof farkasTheta = Inputs.range([0, 355], {
+  label: "Direction of b (degrees)", step: 5, value: 150
+})
+```
+
+```{ojs}
+//| echo: false
+farkasChart = {
+  const R = farkas[Math.round(farkasTheta / 5) % farkas.length], C = farkasColors;
+  const L = farkasLim, W = 440, H = 440, m = 28;
+  const x = d3.scaleLinear([-L, L], [m, W - m]);
+  const y = d3.scaleLinear([-L, L], [H - m, m]);
+  const svg = d3.create("svg").attr("viewBox", [0, 0, W, H])
+      .style("width", "100%").style("max-width", "460px")
+      .style("font-family", "inherit").style("font-size", "17px");
+  const path = pts => "M" + pts.map(p => `${x(p[0])},${y(p[1])}`).join("L") + "Z";
+  const defs = svg.append("defs");
+  const marker = (id, color) => defs.append("marker").attr("id", id)
+      .attr("viewBox", "0 0 10 10").attr("refX", 9).attr("refY", 5)
+      .attr("markerWidth", 7).attr("markerHeight", 7).attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,0L10,5L0,10Z").attr("fill", color);
+  marker("fk-black", "currentColor"); marker("fk-b", R.inside ? C.hull : C.weak);
+  marker("fk-y", C.p2); marker("fk-part", C.p1);
+  const arrow = (from, to, color, id, w = 2.2, dash = null) => {
+    const l = svg.append("line").attr("x1", x(from[0])).attr("y1", y(from[1]))
+      .attr("x2", x(to[0])).attr("y2", y(to[1])).attr("stroke", color)
+      .attr("stroke-width", w).attr("marker-end", `url(#${id})`);
+    if (dash) l.attr("stroke-dasharray", dash);
+  };
+  const label = (p, text, color, dx = 6, dy = -6) =>
+    svg.append("text").attr("x", x(p[0]) + dx).attr("y", y(p[1]) + dy)
+       .attr("fill", color).text(text);
+
+  // axes and cone
+  for (const t of d3.range(-4, 5)) {
+    svg.append("line").attr("x1", x(t)).attr("x2", x(t)).attr("y1", y(-L)).attr("y2", y(L))
+       .attr("stroke", C.grid).attr("stroke-opacity", t === 0 ? 0.9 : 0.35);
+    svg.append("line").attr("y1", y(t)).attr("y2", y(t)).attr("x1", x(-L)).attr("x2", x(L))
+       .attr("stroke", C.grid).attr("stroke-opacity", t === 0 ? 0.9 : 0.35);
+  }
+  svg.append("path").attr("d", path(farkasCone)).attr("fill", C.p1)
+     .attr("fill-opacity", 0.2).attr("stroke", C.p1).attr("stroke-width", 1.2);
+  farkasA.forEach((a, i) => { arrow([0, 0], a, "currentColor", "fk-black");
+                              label(a, `a${i ? "₂" : "₁"}`, "currentColor"); });
+
+  if (R.inside) {
+    // parallelogram: b = x1 a1 + x2 a2
+    const [p1, p2] = R.parts;
+    svg.append("path").attr("d", path([[0, 0], p1, R.b, p2])).attr("fill", C.hull)
+       .attr("fill-opacity", 0.12).attr("stroke", C.hull).attr("stroke-dasharray", "4 3");
+    arrow([0, 0], p1, C.p1, "fk-part", 1.6, "5 3");
+    arrow([0, 0], p2, C.p1, "fk-part", 1.6, "5 3");
+  } else {
+    svg.append("line").attr("x1", x(R.line[0][0])).attr("y1", y(R.line[0][1]))
+       .attr("x2", x(R.line[1][0])).attr("y2", y(R.line[1][1]))
+       .attr("stroke", C.p2).attr("stroke-width", 1.8).attr("stroke-dasharray", "7 4");
+    arrow([0, 0], R.y.map(v => 1.6 * v), C.p2, "fk-y", 2.4);
+    label(R.y.map(v => 1.6 * v), "y", C.p2, 6, 14);
+  }
+  arrow([0, 0], R.b, R.inside ? C.hull : C.weak, "fk-b", 2.6);
+  label(R.b, "b", R.inside ? C.hull : C.weak);
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+farkasText = {
+  const R = farkas[Math.round(farkasTheta / 5) % farkas.length], C = farkasColors;
+  const fmt = d3.format(".2~f"), box = document.createElement("div");
+  box.style.minHeight = "4.5em";
+  box.innerHTML = R.inside
+    ? `<p><b>System I is solvable.</b> b = ${fmt(R.x[0])}·a₁ + ${fmt(R.x[1])}·a₂ with
+       both multipliers ≥ 0, so b lies in the cone. No certificate y can exist.</p>`
+    : `<p><b>System II is solvable.</b> The certificate
+       <span style="color:${C.p2}">y</span> has y·a₁ = ${fmt(R.ya1)} ≥ 0 and
+       y·a₂ = ${fmt(R.ya2)} ≥ 0, but y·b = ${fmt(R.yb)} &lt; 0. The whole cone lies
+       on one side of the dashed line and b on the other, so b is not a nonnegative
+       combination of a₁ and a₂.</p>`;
+  return box;
+}
+```
+
+::: {.callout-note collapse="true"}
+## Static version of this figure (for printing)
+
+```{python}
+#| label: fig-farkas
+#| fig-cap: "The two cases of Farkas' lemma for $a_1 = (2, 1)$ and $a_2 = (1, 3)$. Left: $b$ (green) is inside the cone (blue), and the dashed parallelogram shows $b = x_1 a_1 + x_2 a_2$ with $x \\ge 0$. Right: $b$ (red) is outside, and the certificate $y$ (orange) satisfies $y^\\top a_1 \\ge 0$, $y^\\top a_2 \\ge 0$ but $y^\\top b < 0$: the dashed hyperplane $y^\\top z = 0$ separates the cone from $b$."
+fig, axes = new_axes(2, xlim=(-LIM, LIM), ylim=(-LIM, LIM), size=4.0)
+for ax, th in zip(axes, (45, 150)):
+    R = farkas_case(th)
+    shade_polygon(ax, CONE, COLORS["p1"], alpha=0.2, lw=1.2)
+    ax.axhline(0, color=COLORS["grid"], lw=0.8); ax.axvline(0, color=COLORS["grid"], lw=0.8)
+    for a, name in ((a1, "$a_1$"), (a2, "$a_2$")):
+        ax.annotate("", xy=a, xytext=(0, 0), arrowprops=dict(arrowstyle="->", lw=1.6))
+        ax.annotate(name, a, xytext=(5, -2), textcoords="offset points")
+    b = np.array(R["b"])
+    col = COLORS["hull"] if R["inside"] else COLORS["weak"]
+    if R["inside"]:
+        p1, p2 = map(np.array, R["parts"])
+        ax.plot(*np.array([p1, b, p2]).T, color=COLORS["hull"], ls="--", lw=1.2)
+        for q in (p1, p2):
+            ax.annotate("", xy=q, xytext=(0, 0), arrowprops=dict(
+                arrowstyle="->", color=COLORS["p1"], lw=1.3, ls="--"))
+        ax.set_title(r"$b \in$ cone: System I solvable", fontsize=11)
+    else:
+        (u0, u1) = R["line"]
+        ax.plot([u0[0], u1[0]], [u0[1], u1[1]], color=COLORS["p2"], ls="--", lw=1.6)
+        yv = 1.6 * np.array(R["y"])
+        ax.annotate("", xy=yv, xytext=(0, 0), arrowprops=dict(
+            arrowstyle="->", color=COLORS["p2"], lw=2))
+        ax.annotate("$y$", yv, xytext=(5, -12), textcoords="offset points",
+                    color=COLORS["p2"])
+        ax.set_title(r"$b \notin$ cone: System II solvable", fontsize=11)
+    ax.annotate("", xy=b, xytext=(0, 0), arrowprops=dict(arrowstyle="->", color=col, lw=2.2))
+    ax.annotate("$b$", b, xytext=(5, 4), textcoords="offset points", color=col)
+    ax.set_xlabel(""); ax.set_ylabel("")
+fig.tight_layout()
+plt.show()
+```
+:::
+
+## The math
+
+Let $A$ be an $m \times n$ matrix with columns $a_1, \dots, a_n$, and $b \in \mathbb{R}^m$.
+
+::: {.callout-important}
+## Theorem (Farkas' lemma)
+Exactly one of the following two systems has a solution:
+
+- **(I)** $\quad Ax = b, \quad x \ge 0$;
+- **(II)** $\quad A^\top y \ge 0, \quad b^\top y < 0$.
+:::
+
+"At most one" is the easy direction: if both held, then
+$0 \le (A^\top y)^\top x = y^\top A x = y^\top b < 0$, which is impossible. The content of
+the lemma is "at least one": whenever (I) fails, a certificate $y$ exists.
+
+### Other versions
+
+The same idea applies to other forms of linear systems. Each line below follows from the
+basic version by adding slack variables or splitting free variables.
+
+| System I has a solution | exactly when System II has none |
+|---|---|
+| $Ax = b,\ x \ge 0$ | $A^\top y \ge 0,\ b^\top y < 0$ |
+| $Ax \le b$ | $y \ge 0,\ A^\top y = 0,\ b^\top y < 0$ |
+| $Ax \le b,\ x \ge 0$ | $y \ge 0,\ A^\top y \ge 0,\ b^\top y < 0$ |
+
+The second line is the one to remember for LP feasibility: **$Ax \le b$ is infeasible
+exactly when some nonnegative combination of its rows reads $0 \le (\text{negative})$.**
+For example, $x_1 + x_2 \le 1$ and $-x_1 - x_2 \le -3$ add up (with $y = (1, 1)$) to
+$0 \le -2$.
+
+### From Farkas to LP duality
+
+Take the LP $\max\{c^\top x : Ax \le b\}$ and its dual $\min\{b^\top y : A^\top y = c,\ y \ge 0\}$.
+
+- **Weak duality** is the "easy direction" computation: for feasible $x$ and $y$,
+  $c^\top x = y^\top A x \le y^\top b$.
+- **Strong duality** (equal optimal values when both are feasible) needs the hard
+  direction of Farkas' lemma; see the proof sketch below.
+
+Each optimal dual vector is a certificate of optimality, just as $y$ in (II) is a
+certificate of infeasibility.
+
+## Why it works
+
+::: {.callout-tip collapse="true"}
+## Proof sketch: Farkas from separation
+Let $K = \{Ax : x \ge 0\}$, the cone generated by the columns of $A$. System (I) says
+$b \in K$. The cone $K$ is convex, and it is **closed** because it is finitely generated
+(this is the one subtle step; it follows from Carathéodory's theorem for cones or from
+the [Minkowski–Weyl theorem](minkowski-weyl.qmd)).
+
+If $b \notin K$, the [separation theorem](../convexity/separating-hyperplanes.qmd) gives
+$y$ with $y^\top b < y^\top z$ for all $z \in K$. Because $0 \in K$, this gives
+$y^\top b < 0$. Because $K$ is a cone, $y^\top z$ cannot be negative for any $z \in K$
+(scale $z$ up and the inequality would fail), so $y^\top a_j \ge 0$ for every column.
+That is (II). In the interactive figure, $y$ is exactly $p - b$, where $p$ is the
+projection of $b$ onto the cone.
+:::
+
+::: {.callout-tip collapse="true"}
+## Proof sketch: strong duality
+Let $z^\star = \max\{c^\top x : Ax \le b\}$ be finite and fix $\varepsilon > 0$. The system
+$Ax \le b,\ -c^\top x \le -(z^\star + \varepsilon)$ has no solution. By the second
+version in the table, there are $y \ge 0$ and $t \ge 0$ with
+$$
+A^\top y - t c = 0, \qquad b^\top y - t (z^\star + \varepsilon) < 0 .
+$$
+If $t = 0$, then $A^\top y = 0$ and $b^\top y < 0$, which would make $Ax \le b$ itself
+infeasible, but it has the optimal solution. So $t > 0$; divide by $t$. Then $y/t$ is dual feasible with dual value
+$b^\top y / t < z^\star + \varepsilon$. Since $\varepsilon$ was arbitrary and weak
+duality gives $\ge z^\star$, the dual optimum equals $z^\star$.
+:::
+
+## In practice
+
+- **Infeasibility certificates.** When an LP solver reports "infeasible," it can return
+  a Farkas vector $y$ (often called a *dual ray*). It tells you which constraints,
+  combined, contradict each other.
+- **Benders feasibility cuts** come straight from Farkas' lemma: when the subproblem is
+  infeasible for the current master solution, the Farkas vector becomes a cut. See
+  [Benders Decomposition: Theory and Mechanism](../../decomposition-methods/benders-decomposition/theory-and-mechanism.qmd).
+- **Theorems of the alternative.** Many results of the form "exactly one of two
+  systems is solvable" exist, for strict inequalities, for equations, and so on. They
+  are all variations on this one idea.
+
+## Further reading
+
+- @schrijver1986, Chapter 7: Farkas' lemma in all its variants and LP duality.
+- @boyd2004, Section 5.8: theorems of alternatives from the duality viewpoint.
+- Previous: [The Minkowski–Weyl Theorem](minkowski-weyl.qmd). Next: linear programming
+  duality, in the [Linear Programming](../../linear-programming/index.qmd) category.

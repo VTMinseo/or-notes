@@ -1,0 +1,206 @@
+---
+kind: topic
+title: "Separating Hyperplanes"
+description: "A point outside a closed convex set can be cut off by a hyperplane: the projection, separation and supporting hyperplane theorems."
+categories: [foundations, convexity, duality]
+order: 3
+level: intro
+prerequisites: "Convex sets; convex functions (first-order condition)"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from _lib.orplot import new_axes, shade_polygon, convex_hull, mark_point, COLORS
+
+def closest_point(V, z):
+    """Closest point to z in the convex polygon with vertices V (z assumed outside)."""
+    best, bd = None, np.inf
+    for i in range(len(V)):
+        p, q = np.asarray(V[i], float), np.asarray(V[(i + 1) % len(V)], float)
+        t = np.clip((z - p) @ (q - p) / ((q - p) @ (q - p)), 0, 1)
+        c = p + t * (q - p)
+        if np.linalg.norm(z - c) < bd:
+            best, bd = c, np.linalg.norm(z - c)
+    return best
+
+def draw_line(ax, a, beta, xlim, **kw):
+    """Draw {x : a.x = beta} across the x-range (or y-range if vertical)."""
+    if abs(a[1]) > 1e-9:
+        xs = np.array(xlim)
+        ax.plot(xs, (beta - a[0] * xs) / a[1], **kw)
+    else:
+        ax.axvline(beta / a[0], **kw)
+```
+
+## The idea
+
+Take a closed convex set $C$ and a point $z$ that is not in it. Then there is a
+**hyperplane** (a line in the plane) with $C$ entirely on one side and $z$ strictly on
+the other. A short recipe finds one: take the point $p$ of $C$ closest to $z$, and use the
+hyperplane perpendicular to $z - p$ that passes between them.
+
+This is the most-used fact in optimization. A separating hyperplane is a **certificate**:
+it proves, in a way anyone can check, that $z$ is not in $C$. Duality, Farkas' lemma,
+Benders cuts and cutting planes are all instances of it.
+
+```{python}
+#| label: fig-separation
+#| fig-cap: "The point $z$ lies outside the convex set $C$ (blue). Its projection $p$ is the closest point of $C$. The hyperplane (green) perpendicular to $z - p$ separates them: all of $C$ satisfies $a^\\top x \\le \\beta$, while $a^\\top z > \\beta$."
+C = [(1.0, 1.0), (4.6, 1.4), (5.4, 3.6), (3.2, 5.2), (1.2, 3.8)]
+z = np.array([6.8, 6.2])
+p = closest_point(C, z)
+a = z - p
+beta = a @ (p + z) / 2
+fig, ax = new_axes(1, xlim=(0, 8), ylim=(0, 8), size=4.4)
+shade_polygon(ax, C, COLORS["p1"], label="$C$")
+draw_line(ax, a, beta, (0, 8), color=COLORS["hull"], lw=2,
+          label=r"$a^\top x = \beta$")
+ax.annotate("", xy=z, xytext=p, arrowprops=dict(arrowstyle="->", color="gray", lw=1.3))
+mark_point(ax, p, COLORS["p1"])
+mark_point(ax, z, COLORS["weak"])
+ax.annotate("$p$", p, xytext=(-14, 4), textcoords="offset points")
+ax.annotate("$z$", z, xytext=(6, 2), textcoords="offset points")
+ax.text(6.5, 4.75, r"$a = z - p$", fontsize=10, color="gray")
+ax.legend(loc="lower right")
+plt.show()
+```
+
+## The math
+
+A **hyperplane** is a set $H = \{x : a^\top x = \beta\}$ with $a \ne 0$. It splits space
+into the two half-spaces $a^\top x \le \beta$ and $a^\top x \ge \beta$. The vector $a$ is
+its **normal**.
+
+### Projection onto a convex set
+
+::: {.callout-important}
+## Theorem (projection)
+Let $C \subseteq \mathbb{R}^n$ be nonempty, closed and convex, and let $z \in \mathbb{R}^n$.
+There is exactly one point $p \in C$ closest to $z$ (in the Euclidean norm). It is
+characterized by
+$$
+(z - p)^\top (y - p) \;\le\; 0 \qquad \text{for all } y \in C .
+$$
+:::
+
+In words: the angle at $p$ between "back toward $z$" and "toward any other point of $C$"
+is at least $90°$.
+
+### Separating a point from a set
+
+::: {.callout-important}
+## Theorem (separation)
+Let $C$ be nonempty, closed and convex, and $z \notin C$. Then there is $a \ne 0$ with
+$$
+a^\top z \;>\; \sup_{y \in C} a^\top y .
+$$
+One choice is $a = z - p$, with $p$ the projection of $z$ onto $C$.
+:::
+
+The separation theorem goes back to Minkowski's work on convex bodies, published after
+his death [@minkowski1911]. Both conditions matter. Without **convexity**, a point in a
+"dent" of the set cannot be cut off. Without **closedness**, a boundary point that is
+missing from the set cannot be separated *strictly*.
+
+### Separating two sets, and supporting hyperplanes
+
+Two versions follow from the theorem above.
+
+- **Two disjoint convex sets.** If $C$ and $D$ are convex and disjoint, some hyperplane
+  separates them: there is $a \ne 0$ with $a^\top x \le a^\top y$ for all
+  $x \in C$, $y \in D$. If moreover $C$ is closed and $D$ is compact, the separation is
+  strict.
+- **Supporting hyperplanes.** If $x_0$ is on the boundary of a convex set $C$, there is
+  a hyperplane through $x_0$ with all of $C$ on one side. It "touches" $C$ at $x_0$.
+
+```{python}
+#| label: fig-support
+#| fig-cap: "Left: two disjoint convex sets $C$ (blue) and $D$ (orange) are separated by a hyperplane (green). Right: supporting hyperplanes (grey) touch the convex set at boundary points. The set equals the intersection of all the half-spaces they bound, which is why a closed convex set can be described entirely by linear inequalities."
+fig, axes = new_axes(2, xlim=(0, 8), ylim=(0, 8), size=3.9)
+ax = axes[0]
+t = np.linspace(0, 2 * np.pi, 120)
+Cset = convex_hull(np.c_[2.6 + 1.7 * np.cos(t), 3.0 + 1.2 * np.sin(t)])
+D = [(5.2, 4.4), (7.4, 5.0), (6.8, 7.4), (5.0, 6.8)]
+# separate the closest pair of points, as in the proof
+best = None
+for d in D:
+    c = closest_point(Cset, np.array(d, float))
+    if best is None or np.linalg.norm(d - c) < best[0]:
+        best = (np.linalg.norm(d - c), c, np.array(d, float))
+_, c0, d0 = best
+a2 = d0 - c0
+draw_line(ax, a2, a2 @ (c0 + d0) / 2, (0, 8), color=COLORS["hull"], lw=2)
+shade_polygon(ax, Cset, COLORS["p1"], label="$C$")
+shade_polygon(ax, D, COLORS["p2"], label="$D$")
+ax.legend(loc="upper left")
+ax.set_title("Separating two sets")
+ax = axes[1]
+E = convex_hull(np.c_[4 + 2.4 * np.cos(t), 4 + 1.6 * np.sin(t)])
+for th in np.linspace(0, 2 * np.pi, 10, endpoint=False):
+    u = np.array([np.cos(th), np.sin(th)])
+    b = max(E @ u)
+    draw_line(ax, u, b, (0, 8), color="gray", lw=0.8, alpha=0.6)
+    mark_point(ax, E[np.argmax(E @ u)], "gray", size=14)
+shade_polygon(ax, E, COLORS["p1"])
+ax.set_title("Supporting hyperplanes")
+for ax in axes:
+    ax.set_xlim(0, 8); ax.set_ylim(0, 8)
+fig.tight_layout()
+plt.show()
+```
+
+A consequence worth remembering:
+
+> **A closed convex set is the intersection of all half-spaces that contain it.**
+
+Each point outside the set is cut off by at least one of them. For polyhedra, finitely
+many half-spaces are enough. That is the inequality description in the
+[Minkowski–Weyl theorem](../polyhedra/minkowski-weyl.qmd).
+
+## Why it works
+
+::: {.callout-tip collapse="true"}
+## Proof sketch: projection
+**Existence.** Fix any $y_0 \in C$. The closest point, if it exists, lies in the
+bounded set $C \cap \{y : \|y - z\| \le \|y_0 - z\|\}$, which is closed and bounded. The
+continuous function $\|y - z\|^2$ attains its minimum there.
+
+**Characterization.** $p$ minimizes the convex function $f(y) = \tfrac12\|y - z\|^2$
+over $C$. By the first-order condition on the
+[Convex Functions](convex-functions.qmd) page, this holds if and only if
+$\nabla f(p)^\top (y - p) = (p - z)^\top (y - p) \ge 0$ for all $y \in C$.
+
+**Uniqueness.** If $p$ and $p'$ both satisfy it, apply the condition to each with the
+other as $y$ and add: $\|p - p'\|^2 \le 0$.
+:::
+
+::: {.callout-tip collapse="true"}
+## Proof sketch: separation
+Let $a = z - p \ne 0$. For $y \in C$ the projection inequality gives
+$a^\top y \le a^\top p$. And $a^\top z - a^\top p = \|a\|^2 > 0$. So
+$a^\top z > a^\top p \ge \sup_{y \in C} a^\top y$.
+
+For two disjoint convex sets $C$ and $D$, apply the same idea to the convex set
+$C - D = \{x - y : x \in C, y \in D\}$, which does not contain $0$.
+:::
+
+## In practice
+
+- **Certificates.** To show a system of linear inequalities has no solution, exhibit a
+  separating hyperplane. Written out for polyhedral cones, that is
+  [Farkas' lemma](../polyhedra/farkas-lemma.qmd), and LP duality follows from it.
+- **Cutting planes are separating hyperplanes.** Given a fractional LP solution
+  $\hat x$ and the integer hull $P_I$, a valid cut is a hyperplane separating $\hat x$ from
+  $P_I$. Finding one is the *separation problem*; see
+  [Lift-and-Project Cuts](../../integer-programming/disjunctive-programming/lift-and-project.qmd).
+- **Benders cuts** separate the current master solution from the region where the
+  subproblem is feasible and cheap enough.
+
+## Further reading
+
+- @boyd2004, Section 2.5: separating and supporting hyperplanes, with pictures.
+- @rockafellar1970, Section 11: separation theorems in full generality.
+- Previous: [Convex Functions](convex-functions.qmd). Next:
+  [Polyhedra and Their Vertices](../polyhedra/polyhedra-and-vertices.qmd).

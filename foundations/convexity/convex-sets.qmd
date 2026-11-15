@@ -1,0 +1,177 @@
+---
+kind: topic
+title: "Convex Sets and Convex Hulls"
+description: "What a convex set is, how convex hulls and cones are built, and Carathéodory's theorem."
+categories: [foundations, convexity, geometry]
+order: 1
+level: intro
+prerequisites: "Vectors and linear combinations"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from _lib.orplot import new_axes, shade_polygon, convex_hull, mark_point, COLORS
+```
+
+## The idea
+
+A set $C$ is **convex** if, whenever two points are in $C$, the whole segment between them
+is in $C$ too. You can walk in a straight line from any point of the set to any other
+without leaving it.
+
+```{python}
+#| label: fig-convex-or-not
+#| fig-cap: "Left: a convex set. Every segment between two of its points stays inside. Right: a non-convex set (an L shape). The red segment joins two points of the set but leaves it, so the set is not convex."
+fig, axes = new_axes(2, xlim=(0, 6), ylim=(0, 6), size=3.8)
+ax = axes[0]
+t = np.linspace(0, 2 * np.pi, 200)
+blob = np.c_[3 + 2.3 * np.cos(t), 3 + 1.6 * np.sin(t) + 0.3 * np.cos(2 * t)]
+shade_polygon(ax, convex_hull(blob), COLORS["p1"])
+for p, q in [((1.2, 2.6), (4.6, 4.0)), ((2.0, 1.8), (3.9, 4.3)), ((1.4, 3.6), (4.9, 2.6))]:
+    ax.plot(*zip(p, q), color=COLORS["hull"], lw=1.8)
+    for z in (p, q):
+        mark_point(ax, z, COLORS["hull"], size=35)
+ax.set_title("Convex")
+ax = axes[1]
+L = [(0.8, 0.8), (5.2, 0.8), (5.2, 2.4), (2.4, 2.4), (2.4, 5.2), (0.8, 5.2)]
+shade_polygon(ax, L, COLORS["p2"])
+p, q = (4.6, 1.6), (1.6, 4.6)
+ax.plot(*zip(p, q), color=COLORS["weak"], lw=2)
+for z in (p, q):
+    mark_point(ax, z, COLORS["weak"], size=35)
+ax.set_title("Not convex")
+for ax in axes:
+    ax.set_xticks([]); ax.set_yticks([]); ax.set_xlabel(""); ax.set_ylabel("")
+fig.tight_layout()
+plt.show()
+```
+
+Examples you will meet all the time:
+
+- a **half-space** $\{x : a^\top x \le \beta\}$ and a **hyperplane** $\{x : a^\top x = \beta\}$;
+- a **ball** $\{x : \|x - c\| \le r\}$, in any norm;
+- the **feasible region of an LP**, $\{x : Ax \le b\}$, since it is an intersection of
+  half-spaces (see [Polyhedra and Their Vertices](../polyhedra/polyhedra-and-vertices.qmd)).
+
+Non-examples matter just as much. The set of integer points of a polytope is not convex,
+and neither is a union of two disjoint polyhedra. Both facts are why integer and
+[disjunctive programming](../../integer-programming/disjunctive-programming/introduction.qmd)
+are hard.
+
+## The math
+
+### Convex combinations and the convex hull
+
+A **convex combination** of points $x^1, \dots, x^k$ is a weighted average
+$$
+\lambda_1 x^1 + \dots + \lambda_k x^k, \qquad \lambda_i \ge 0, \quad \sum_i \lambda_i = 1 .
+$$
+A set is convex exactly when it contains all convex combinations of its points. (The
+definition uses $k = 2$; larger $k$ follows by induction.)
+
+The **convex hull** $\operatorname{conv}(S)$ is the smallest convex set containing $S$. It
+has two equivalent descriptions:
+
+- from the **outside**: the intersection of all convex sets containing $S$;
+- from the **inside**: the set of all convex combinations of points of $S$.
+
+For finitely many points in the plane, the convex hull is the polygon you get by
+stretching a rubber band around them.
+
+### Operations that keep convexity
+
+If $C$ and $D$ are convex, then so are
+
+- the **intersection** $C \cap D$ (of any number of convex sets);
+- the image $\{Mx + c : x \in C\}$ and the preimage under an affine map;
+- the **Minkowski sum** $C + D = \{x + y : x \in C,\ y \in D\}$.
+
+The **union** $C \cup D$ is usually *not* convex. Its convex hull,
+$\operatorname{conv}(C \cup D)$, is the central object of disjunctive programming.
+
+### Cones
+
+A **conic combination** drops the condition $\sum_i \lambda_i = 1$ and keeps
+$\lambda_i \ge 0$. The set of all conic combinations of $a^1, \dots, a^k$ is the **cone
+they generate**,
+$$
+\operatorname{cone}(a^1, \dots, a^k) = \{\lambda_1 a^1 + \dots + \lambda_k a^k : \lambda \ge 0\}.
+$$
+It is convex and closed under scaling by nonnegative numbers. Cones come back in
+[Farkas' lemma](../polyhedra/farkas-lemma.qmd) and in the
+[Minkowski–Weyl theorem](../polyhedra/minkowski-weyl.qmd), where they describe the
+directions in which an unbounded polyhedron goes on forever.
+
+### Carathéodory's theorem
+
+The inside description of $\operatorname{conv}(S)$ allows combinations of any number of
+points. In fact a few are enough.
+
+::: {.callout-important}
+## Theorem (Carathéodory)
+If $S \subseteq \mathbb{R}^n$, every point of $\operatorname{conv}(S)$ is a convex
+combination of at most $n + 1$ points of $S$.
+:::
+
+The result is due to @caratheodory1907. In the plane, every point of the hull lies in a
+triangle whose corners are points of $S$.
+
+```{python}
+#| label: fig-caratheodory
+#| fig-cap: "Carathéodory in the plane ($n = 2$). The convex hull (green) of twelve points contains the point $x$ (red). Although the hull has many corners, $x$ already lies in a triangle (blue) spanned by just $n + 1 = 3$ of the points."
+rng = np.random.default_rng(7)
+S = rng.uniform(0.6, 5.4, size=(12, 2))
+H = convex_hull(S)
+x = np.array([3.4, 2.9])
+
+def in_triangle(p, a, b, c):
+    d = lambda u, v, w: (u[0] - w[0]) * (v[1] - w[1]) - (v[0] - w[0]) * (u[1] - w[1])
+    s = [d(p, a, b), d(p, b, c), d(p, c, a)]
+    return min(s) >= 0 or max(s) <= 0
+
+tri = next((H[0], H[i], H[i + 1]) for i in range(1, len(H) - 1)
+           if in_triangle(x, H[0], H[i], H[i + 1]))
+fig, ax = new_axes(1, xlim=(0, 6), ylim=(0, 6), size=4.2)
+shade_polygon(ax, H, COLORS["hull"], alpha=0.15, label=r"conv$(S)$")
+shade_polygon(ax, tri, COLORS["p1"], alpha=0.35, label="3 points suffice")
+ax.scatter(*S.T, color="black", s=18, zorder=4, label="points of $S$")
+mark_point(ax, x, COLORS["weak"])
+ax.annotate("$x$", x, xytext=(6, 4), textcoords="offset points")
+ax.legend(loc="lower left", fontsize=9)
+plt.show()
+```
+
+## Why it works
+
+::: {.callout-tip collapse="true"}
+## Proof sketch of Carathéodory's theorem
+Write $x = \sum_{i=1}^{k} \lambda_i x^i$ with all $\lambda_i > 0$ and $k$ as small as
+possible. Suppose $k > n + 1$. Then the $k - 1 > n$ vectors $x^2 - x^1, \dots, x^k - x^1$
+in $\mathbb{R}^n$ are linearly dependent. So there are numbers $\mu_i$, not all zero, with
+$\sum_i \mu_i x^i = 0$ and $\sum_i \mu_i = 0$, and some $\mu_i > 0$.
+
+For any $t$, $x = \sum_i (\lambda_i - t\mu_i) x^i$ and the weights still sum to 1. Increase
+$t$ from 0 until the first weight $\lambda_i - t\mu_i$ hits zero. All weights stay
+nonnegative, and one point drops out, so $x$ is a convex combination of $k - 1$ points.
+That contradicts the choice of $k$.
+:::
+
+## In practice
+
+- **LP feasible regions are convex**, so the line segment between two feasible solutions
+  is feasible. This is the starting point of the geometry of the simplex method.
+- **The integer hull.** For an integer program with LP relaxation $P$, the set
+  $\operatorname{conv}(P \cap \mathbb{Z}^n)$ is the best possible formulation. Cutting
+  planes try to approach it.
+- **Few points are enough.** The same idea appears in LP: a basic solution has at most
+  as many nonzero variables as there are constraints. In
+  [Dantzig–Wolfe decomposition](../../decomposition-methods/dantzig-wolfe/theory-and-mechanism.qmd),
+  this is why an optimal master solution combines only a handful of the many columns.
+
+## Further reading
+
+- @rockafellar1970, Part I: the standard reference on convex sets.
+- @boyd2004, Chapter 2: an applied introduction with many examples, free online.
+- Next: [Convex Functions](convex-functions.qmd).

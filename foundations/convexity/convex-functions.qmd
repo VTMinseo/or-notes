@@ -1,0 +1,185 @@
+---
+kind: topic
+title: "Convex Functions"
+description: "Convex functions, their epigraphs and tangent lines, and why every local minimum of a convex problem is global."
+categories: [foundations, convexity, optimality]
+order: 2
+level: intro
+prerequisites: "Convex sets; gradients"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from _lib.orplot import mark_point, COLORS
+```
+
+## The idea
+
+A function is **convex** if its graph never rises above a chord: pick two points on the
+graph, join them with a straight line, and the graph between them stays on or below that
+line. Equivalently, the region on and above the graph, the **epigraph**, is a convex set.
+
+For differentiable functions there is a second picture. The graph lies on or above every
+**tangent line**. So a tangent is a global under-estimator: a quantity measured at one
+point gives a lower bound everywhere.
+
+```{python}
+#| label: fig-chord-tangent
+#| fig-cap: "A convex function $f$. The shaded epigraph (everything on or above the graph) is a convex set. The chord (orange) between two points of the graph lies above the graph. The tangent (green) at any point lies below the whole graph, which is why a tangent gives a lower bound everywhere."
+f = lambda x: 0.18 * (x - 3.2) ** 2 + 0.25 * np.exp(0.35 * x)
+df = lambda x: 0.36 * (x - 3.2) + 0.0875 * np.exp(0.35 * x)
+xs = np.linspace(0, 8, 300)
+fig, ax = plt.subplots(figsize=(5.4, 3.9))
+ax.fill_between(xs, f(xs), 8, color=COLORS["p1"], alpha=0.12, lw=0, label="epigraph")
+ax.plot(xs, f(xs), color=COLORS["p1"], lw=2.2, label="$f$")
+a, b = 0.8, 6.6
+ax.plot([a, b], [f(a), f(b)], color=COLORS["p2"], lw=1.8, label="chord: above $f$")
+for z in (a, b):
+    mark_point(ax, (z, f(z)), COLORS["p2"], size=35)
+c = 5.0
+ax.plot(xs, f(c) + df(c) * (xs - c), color=COLORS["hull"], lw=1.8, ls="--",
+        label=r"tangent: $f(c) + f'(c)(x-c)$")
+mark_point(ax, (c, f(c)), COLORS["hull"], size=35)
+ax.set_xlim(0, 8); ax.set_ylim(0, 6)
+ax.set_xlabel("$x$"); ax.set_ylabel("$f(x)$")
+ax.legend(loc="upper center", fontsize=9)
+plt.show()
+```
+
+## The math
+
+### Definition and equivalent tests
+
+Let $C \subseteq \mathbb{R}^n$ be convex. A function $f : C \to \mathbb{R}$ is **convex** if
+$$
+f\big(\lambda x + (1-\lambda) y\big) \;\le\; \lambda f(x) + (1-\lambda) f(y)
+\qquad \text{for all } x, y \in C,\ \lambda \in [0, 1].
+$$
+Convex functions were first studied systematically by @jensen1906, and the
+many-point version of this inequality,
+$f\big(\sum_i \lambda_i x^i\big) \le \sum_i \lambda_i f(x^i)$, is called **Jensen's
+inequality**. A function is **concave** if $-f$ is convex.
+
+Three equivalent ways to check convexity:
+
+| Test | Condition | When to use it |
+|---|---|---|
+| Epigraph | $\{(x, t) : f(x) \le t\}$ is a convex set | geometric arguments |
+| First order ($f$ differentiable) | $f(y) \ge f(x) + \nabla f(x)^\top (y - x)$ for all $x, y$ | bounds, cuts, optimality |
+| Second order ($f$ twice differentiable) | the Hessian $\nabla^2 f(x)$ is positive semidefinite everywhere | checking a formula |
+
+### Examples, and how to build more
+
+Convex: linear and affine functions (these are also concave); any norm $\|x\|$;
+$x^\top Q x$ when $Q$ is positive semidefinite; $e^{x}$; $-\log x$ on $x > 0$.
+
+Convexity is kept by
+
+- **nonnegative sums**: $\alpha f + \beta g$ with $\alpha, \beta \ge 0$;
+- **composition with an affine map**: $x \mapsto f(Ax + b)$;
+- **pointwise maximum**: $\max\{f_1(x), \dots, f_k(x)\}$. In particular, a maximum of
+  linear functions, $\max_i (a_i^\top x + \beta_i)$, is convex and piecewise linear.
+
+The last rule is the reason LP can model many convex costs: minimizing
+$\max_i (a_i^\top x + \beta_i)$ is the LP "minimize $t$ subject to
+$t \ge a_i^\top x + \beta_i$ for all $i$."
+
+### Convex constraints give convex feasible sets
+
+If $g$ is convex, every **sublevel set** $\{x : g(x) \le \alpha\}$ is convex. So a
+problem
+$$
+\min_x \; f(x) \quad \text{s.t.} \quad g_i(x) \le 0 \;\; (i = 1, \dots, m), \qquad Ax = b,
+$$
+with $f$ and all $g_i$ convex, has a convex feasible region. This is a **convex
+optimization problem**. Linear programs are the simplest case.
+
+### The main theorem: local minima are global
+
+::: {.callout-important}
+## Theorem (local = global)
+Let $f$ be convex on a convex set $C$. Then every local minimizer of $f$ over $C$ is a
+global minimizer. The set of all minimizers is convex.
+
+If in addition $f$ is differentiable, $x^\star \in C$ is a minimizer if and only if
+$$
+\nabla f(x^\star)^\top (y - x^\star) \;\ge\; 0 \qquad \text{for all } y \in C .
+$$
+When $C = \mathbb{R}^n$ (no constraints), this says $\nabla f(x^\star) = 0$.
+:::
+
+The first-order condition says: from $x^\star$, no feasible direction goes downhill. For
+a non-convex function, "no direction goes downhill *nearby*" says nothing about points
+far away. For a convex function, the tangent inequality turns local information into a
+global statement.
+
+```{python}
+#| label: fig-local-global
+#| fig-cap: "Left: a convex function has a single valley, so any local minimum (green) is the global minimum. Right: a non-convex function can trap a local method in a local minimum (red) that is far from the global one (green)."
+xs = np.linspace(0, 8, 400)
+fig, axes = plt.subplots(1, 2, figsize=(8.4, 3.3), sharey=True)
+ax = axes[0]
+ax.plot(xs, f(xs), color=COLORS["p1"], lw=2.2)
+xm = xs[np.argmin(f(xs))]
+mark_point(ax, (xm, f(xm)), COLORS["hull"])
+ax.set_title("Convex: local = global")
+ax = axes[1]
+g = lambda x: 0.12 * (x - 4) ** 2 + 0.9 * np.cos(1.6 * x) + 1.4
+ax.plot(xs, g(xs), color=COLORS["p2"], lw=2.2)
+gx = g(xs)
+loc = [i for i in range(1, len(xs) - 1) if gx[i] < gx[i - 1] and gx[i] < gx[i + 1]]
+ig = min(loc, key=lambda i: gx[i])
+for i in loc:
+    mark_point(ax, (xs[i], gx[i]), COLORS["hull"] if i == ig else COLORS["weak"])
+ax.set_title("Non-convex: local minima can mislead")
+for ax in axes:
+    ax.set_xlim(0, 8); ax.set_ylim(0, 4.5); ax.set_xlabel("$x$")
+axes[0].set_ylabel("$f(x)$")
+fig.tight_layout()
+plt.show()
+```
+
+## Why it works
+
+::: {.callout-tip collapse="true"}
+## Proof sketch: local minima are global
+Let $x$ be a local minimizer and suppose some $y \in C$ has $f(y) < f(x)$. Points
+$z_\lambda = (1-\lambda) x + \lambda y$ lie in $C$ for $\lambda \in [0, 1]$, and by convexity
+$$
+f(z_\lambda) \le (1 - \lambda) f(x) + \lambda f(y) < f(x) \qquad (0 < \lambda \le 1).
+$$
+For small $\lambda$, $z_\lambda$ is as close to $x$ as we like, yet strictly better. That
+contradicts local optimality.
+
+If $x$ and $y$ are both minimizers with value $f^\star$, the same inequality gives
+$f(z_\lambda) \le f^\star$, so every $z_\lambda$ is a minimizer too: the set of minimizers
+is convex.
+:::
+
+::: {.callout-tip collapse="true"}
+## Proof sketch: the first-order condition
+If $\nabla f(x^\star)^\top (y - x^\star) \ge 0$ for all $y \in C$, the tangent inequality
+gives $f(y) \ge f(x^\star) + \nabla f(x^\star)^\top (y - x^\star) \ge f(x^\star)$.
+Conversely, if $\nabla f(x^\star)^\top (y - x^\star) < 0$ for some $y \in C$, moving a
+little from $x^\star$ toward $y$ decreases $f$, so $x^\star$ was not a minimizer.
+:::
+
+## In practice
+
+- **LP is convex**, which is why a solver can stop at a point where no improving
+  direction exists and know it is optimal.
+- **Value functions.** The optimal value of an LP, viewed as a function of its
+  right-hand side, is convex and piecewise linear. Benders decomposition approximates it
+  from below with tangent-like cuts; see the value-function figure in
+  [Benders Decomposition](../../decomposition-methods/benders-decomposition/theory-and-mechanism.qmd).
+- **Integer programs are not convex**: their feasible set is a set of isolated points.
+  That is the root of their difficulty, and of the need for relaxations.
+
+## Further reading
+
+- @boyd2004, Chapter 3: convex functions, with many examples.
+- @rockafellar1970, Part I.
+- Previous: [Convex Sets and Convex Hulls](convex-sets.qmd). Next:
+  [Separating Hyperplanes](separating-hyperplanes.qmd).

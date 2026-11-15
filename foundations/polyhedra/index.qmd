@@ -1,0 +1,28 @@
+---
+kind: subcategory
+title: "Polyhedra"
+description: "Vertices, the Minkowski–Weyl theorem, and Farkas' lemma."
+order: 2
+toc: false
+listing:
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "order"
+    fields: [title, description, categories]
+---
+
+A **polyhedron** is the set of solutions of finitely many linear inequalities,
+$P = \{x : Ax \le b\}$. It is the feasible region of every linear program and the LP
+relaxation of every integer program. These pages cover its two descriptions (inequalities
+vs. vertices and rays) and the theorem of the alternative that LP duality rests on.
+
+Prerequisite: [Convexity](../convexity/index.qmd), especially
+[Separating Hyperplanes](../convexity/separating-hyperplanes.qmd).
+
+## Topics
+
+::: {#topics}
+:::
