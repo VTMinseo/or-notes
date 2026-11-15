@@ -1,0 +1,175 @@
+---
+kind: topic
+title: "Shortest Paths"
+description: "Dijkstra's and the Bellman–Ford algorithms, the optimality equations, and shortest paths as an LP whose dual variables are distances."
+categories: [network-optimization, shortest-paths, duality]
+order: 1
+level: intro
+prerequisites: "LP duality"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from _lib.orplot import COLORS
+from _lib.toy_network import ARCS, NODES, POS, dijkstra_steps, path_to, draw_network
+
+steps = dijkstra_steps()
+final = steps[-1]
+dist, pred = final["dist"], final["pred"]
+sp = path_to(pred, "t")
+sp_arcs = list(zip(sp[:-1], sp[1:]))
+```
+
+## The idea
+
+Given a network whose arcs have **lengths** (distances, travel times, costs), find the
+shortest route from a source $s$ to a target $t$. It is the problem a navigation app
+solves, and it appears inside many larger algorithms.
+
+In the toy network below, the shortest route from $s$ to $t$ is
+$s \to a \to d \to c \to t$, with length $2 + 3 + 2 + 1 = 8$. The tempting direct-looking
+routes are longer: $s \to a \to c \to t$ has length $10$.
+
+```{python}
+#| label: fig-shortest-path
+#| fig-cap: "The toy network with arc lengths. The shortest $s$–$t$ path (red) has length 8. The blue number next to each node is its distance from $s$. The dark arcs form a tree of shortest paths from $s$ to every node; grey arcs are not needed by any of them."
+tree = [(pred[v], v) for v in NODES if pred[v] is not None]
+fig, ax = plt.subplots(figsize=(6.2, 3.6))
+draw_network(ax, label="cost", highlight=sp_arcs,
+             dim=[(u, v) for u, v, *_ in ARCS if (u, v) not in tree])
+for v in NODES:
+    x, y = POS[v]
+    ax.text(x, y + (0.27 if y > 0.5 else -0.36), f"{dist[v]:g}", ha="center", fontsize=10, color=COLORS["p1"],
+            fontweight="bold")
+plt.show()
+```
+
+## Dijkstra's algorithm
+
+@dijkstra1959 gave the method still used today when all lengths are nonnegative. It
+grows a set of nodes whose distance is **known for sure**:
+
+1. Give $s$ the label $0$ and every other node the label $\infty$.
+2. Among the nodes not yet final, pick one with the **smallest label** and make it final.
+3. For each arc $(u, v)$ leaving that node $u$, if $\text{label}(u) + \ell_{uv} < \text{label}(v)$,
+   lower $v$'s label to that value (and remember $u$ as $v$'s predecessor).
+4. Repeat until $t$ (or every node) is final.
+
+```{python}
+#| label: fig-dijkstra
+#| fig-cap: "Dijkstra's algorithm on the toy network, one panel per step. Green nodes are final; the orange node is the one made final in that step; blue numbers are the current labels (tentative distances). When $a$ becomes final (step 2), the labels of $b$, $c$ and $d$ drop to 3, 9 and 5; when $d$ becomes final (step 4), $c$ improves from 9 to 7."
+fig, axes = plt.subplots(2, 3, figsize=(10, 4.6))
+for k, (ax, st) in enumerate(zip(axes.flat, steps)):
+    colors = {v: "#a6d8a8" for v in st["permanent"]}
+    colors[st["current"]] = "#f2b880"
+    used = [(st["pred"][v], v) for v in NODES if st["pred"][v] is not None]
+    draw_network(ax, label="cost", node_color=colors,
+                 dim=[(u, v) for u, v, *_ in ARCS if (u, v) not in used])
+    for v in NODES:
+        x, y = POS[v]
+        d = st["dist"][v]
+        ax.text(x, y + (0.27 if y > 0.5 else -0.36), "∞" if np.isinf(d) else f"{d:g}", ha="center", fontsize=10,
+                color=COLORS["p1"], fontweight="bold")
+    ax.set_title(f"step {k + 1}: {st['current']} is final", fontsize=10)
+fig.tight_layout()
+plt.show()
+```
+
+::: {.callout-important}
+## Theorem (Dijkstra)
+If all arc lengths are nonnegative, the label of each node is its true distance from
+$s$ at the moment the node is made final. With a good priority queue the algorithm runs
+in near-linear time in the number of arcs.
+:::
+
+The reason: when $u$ is picked, every other path to $u$ must leave the final set somewhere
+and pay at least the label of a non-final node, which is already at least $u$'s label.
+With a **negative** length, that argument fails: a path could come back cheaper later.
+
+## Negative lengths: Bellman–Ford
+
+When some lengths are negative (for example, arcs that represent profits), use the
+**Bellman–Ford** method, due independently to @ford1956 and @bellman1958: repeat
+"for every arc $(u, v)$, set $\text{label}(v) \leftarrow \min\{\text{label}(v),\ \text{label}(u) + \ell_{uv}\}$"
+for $n - 1$ rounds, where $n$ is the number of nodes. If a further round still lowers
+some label, the network contains a **negative cycle**, and shortest paths are not defined
+(going round the cycle again always helps).
+
+## The math
+
+### The optimality equations
+
+Let $d(v)$ be the distance from $s$ to $v$. If there is no negative cycle, the distances
+are characterized by
+$$
+d(s) = 0, \qquad d(v) = \min_{(u, v)} \big( d(u) + \ell_{uv} \big) \quad (v \ne s).
+$$
+Equivalently, every part of a shortest path is itself a shortest path. These are the
+equations of dynamic programming in their simplest form, and @bellman1958 solved the
+routing problem exactly this way.
+
+### Shortest paths as an LP, and distances as dual variables
+
+Sending one unit of flow from $s$ to $t$ at minimum total length is an LP. With $x_{uv}$
+the flow on arc $(u, v)$:
+$$
+\min \sum_{(u,v)} \ell_{uv} x_{uv}
+\quad\text{s.t.}\quad
+\sum_{v} x_{uv} - \sum_{v} x_{vu} =
+\begin{cases} 1 & u = s\\ -1 & u = t\\ 0 & \text{otherwise}\end{cases},
+\qquad x \ge 0 .
+$$
+Its [dual](../../linear-programming/duality/lp-duality.qmd) has one variable $\pi_v$ per
+node, a **potential**:
+$$
+\max\ \pi_t - \pi_s \quad\text{s.t.}\quad \pi_v - \pi_u \le \ell_{uv} \ \text{ for every arc } (u, v).
+$$
+
+::: {.callout-important}
+## Theorem (distances are optimal potentials)
+If the network has no negative cycle and $t$ is reachable from $s$, the length of a
+shortest $s$–$t$ path equals the maximum of $\pi_t - \pi_s$ over feasible potentials.
+The distances $\pi_v = d(v)$ are an optimal potential, and an arc lies on a shortest path
+exactly when it is **tight**: $d(v) - d(u) = \ell_{uv}$.
+:::
+
+Picture the potentials as heights, and each arc as a string of length $\ell_{uv}$ that
+stops $v$ from rising more than $\ell_{uv}$ above $u$. Pull $t$ up as far as the strings
+allow: the strings that go taut are the shortest path. In the toy network, every arc
+satisfies $d(v) - d(u) \le \ell_{uv}$, and the four arcs of $s \to a \to d \to c \to t$ are
+tight, adding up to $8 = d(t) - d(s)$.
+
+## Why it works
+
+::: {.callout-tip collapse="true"}
+## Proof sketch: distances are optimal potentials
+**Feasible.** For any arc $(u, v)$, going to $u$ by a shortest path and then along
+$(u, v)$ is a path to $v$, so $d(v) \le d(u) + \ell_{uv}$.
+
+**Weak duality.** For any $s$–$t$ path $P$ and feasible potentials,
+$\ell(P) = \sum_{(u,v) \in P} \ell_{uv} \ge \sum_{(u,v) \in P} (\pi_v - \pi_u) = \pi_t - \pi_s$,
+because the sum telescopes.
+
+**Equality.** On a shortest path every arc is tight for $\pi = d$, so the inequality
+holds with equality: $\ell(P) = d(t) - d(s)$. That is
+[complementary slackness](../../linear-programming/duality/lp-duality.qmd).
+:::
+
+## In practice
+
+- **Road routing** uses Dijkstra's algorithm plus heavy preprocessing and good guesses of
+  the remaining distance, which is why maps answer in milliseconds on continental networks.
+- **As a subproblem.** Shortest paths (often with extra resource constraints) are the
+  pricing problem in column generation for vehicle routing and crew scheduling; see
+  [Dantzig–Wolfe](../../decomposition-methods/dantzig-wolfe/theory-and-mechanism.qmd).
+- **Project scheduling.** The earliest finish time of a project whose tasks must wait
+  for each other is a *longest* path in an acyclic network, solved by the same equations
+  in topological order.
+
+## Further reading
+
+- @schrijver2005 for the history of the shortest-path problem.
+- @dijkstra1959, which is two pages long and very readable.
+- Next: [Maximum Flow and Minimum Cut](max-flow-min-cut.qmd).

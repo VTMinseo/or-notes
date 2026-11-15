@@ -1,0 +1,197 @@
+---
+kind: topic
+title: "Matching"
+description: "Pairing workers with jobs: bipartite matching via flows, Kőnig's min-max theorem, the assignment problem, and why general graphs need Edmonds' odd-set inequalities."
+categories: [network-optimization, matching, polyhedra]
+order: 2
+level: intermediate
+prerequisites: "Maximum flow; total unimodularity; LP duality"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from scipy.optimize import linprog
+from _lib.orplot import COLORS
+from _lib.toy_network import (WORKERS, JOBS, BIP_EDGES, BIP_POS,
+                              bipartite_matching_lp, min_vertex_cover)
+
+card = bipartite_matching_lp()
+wtd = bipartite_matching_lp(weighted=True)
+cover = min_vertex_cover()
+
+def draw_bip(ax, matching=(), circled=(), labels=None, prices=None):
+    for u, v, w in BIP_EDGES:
+        p, q = BIP_POS[u], BIP_POS[v]
+        hl = (u, v) in matching
+        ax.plot([p[0], q[0]], [p[1], q[1]], color=COLORS["weak"] if hl else "#999999",
+                lw=3.2 if hl else 1.2, zorder=1)
+        if labels:
+            t = 0.28 if u in ("Ana", "Dee") else 0.22
+            m = (1 - t) * np.array(p) + t * np.array(q)
+            ax.text(*m, f"{w}", fontsize=8.5, ha="center", va="center", zorder=3,
+                    bbox=dict(boxstyle="round,pad=0.1", fc="white", ec="none"))
+    for v, (x, y) in BIP_POS.items():
+        ring = v in circled
+        ax.add_patch(mpatches.Circle((x, y), 0.2, fc="#a6d8a8" if ring else "white",
+                                     ec="black", lw=2.2 if ring else 1.2, zorder=4))
+        ax.text(x, y, v, ha="center", va="center", fontsize=8.5, zorder=5)
+        if prices is not None:
+            ax.text(x + (-0.42 if x < 1 else 0.42), y, f"{prices[v] + 0:g}", ha="center",
+                    va="center", fontsize=9.5, color=COLORS["p1"], fontweight="bold")
+    ax.set_xlim(-0.65, 2.65); ax.set_ylim(-0.45, 3.45)
+    ax.set_aspect("equal"); ax.axis("off")
+```
+
+## The idea
+
+Four workers and four jobs; a line means "this worker can do this job." A **matching**
+is a set of worker–job pairs in which nobody appears twice. How many workers can be
+assigned at once? If each pair has a value, which matching has the largest total value?
+
+In the example, Ana, Ben and Dee can only do $J_1$ or $J_2$, so at most two of them can be
+busy, plus Cai: the maximum matching has size $3$. The three green nodes
+$\{\text{Cai}, J_1, J_2\}$ prove it: every line touches one of them, and a matching can
+use each of them only once.
+
+```{python}
+#| label: fig-bipartite
+#| fig-cap: "Left: a maximum matching (red) of size 3 in the worker–job graph. The green nodes form a minimum vertex cover: every edge touches one of the three, so no matching can have more than 3 edges. Kőnig's theorem says such a certificate always exists in bipartite graphs. Right: with values on the edges, the best assignment (red) has total value $5 + 6 + 6 = 17$. The blue numbers are dual prices: on every edge, the prices of its two ends add up to at least the edge's value, with equality on the chosen edges, which proves 17 is optimal."
+fig, axes = plt.subplots(1, 2, figsize=(8.6, 3.8))
+draw_bip(axes[0], matching=card["matching"], circled=cover)
+axes[0].set_title("maximum matching and minimum cover", fontsize=10)
+draw_bip(axes[1], matching=wtd["matching"], labels=True, prices=wtd["price"])
+axes[1].set_title("best assignment and dual prices", fontsize=10)
+fig.tight_layout()
+plt.show()
+```
+
+## The math
+
+### Bipartite matching is a flow problem
+
+Add a source $s$ with an arc of capacity 1 to each worker, an arc of capacity 1 from
+each job to a sink $t$, and direct every worker–job edge from worker to job. An integer
+$s$–$t$ flow is exactly a matching, so by the
+[integrality theorem](../shortest-paths-and-flows/max-flow-min-cut.qmd) the maximum
+flow is the size of a maximum matching, and augmenting paths find it.
+
+### Kőnig's theorem
+
+A **vertex cover** is a set of nodes touching every edge. Each edge of a matching
+needs its own cover node, so every matching is at most as large as every cover.
+
+::: {.callout-important}
+## Theorem (Kőnig)
+In a bipartite graph, the maximum size of a matching equals the minimum size of a vertex
+cover.
+:::
+
+Dénes Kőnig published this min-max theorem in 1931, in Hungarian; @schrijver2005 tells
+the history. In LP terms it is
+[duality](../../linear-programming/duality/lp-duality.qmd) between
+$$
+\max \sum_e x_e \ \text{ s.t. } \sum_{e \ni v} x_e \le 1 \ (\text{all } v),\ x \ge 0
+\qquad\text{and}\qquad
+\min \sum_v y_v \ \text{ s.t. } y_u + y_v \ge 1 \ (\text{all } uv),\ y \ge 0,
+$$
+plus the fact that both LPs have integer optima, because the incidence matrix of a
+bipartite graph is [totally unimodular](total-unimodularity.qmd).
+
+### The assignment problem and the Hungarian method
+
+With a value $w_{ij}$ on each edge, the **assignment problem** asks for a matching of
+maximum total value. Its LP has the same constraints as above, so it is again integral,
+and its dual assigns a **price** $p_v$ to every node with $p_i + p_j \ge w_{ij}$ on every
+edge. By complementary slackness, a matching is optimal when its edges are **tight**
+($p_i + p_j = w_{ij}$) and every unmatched node has price zero.
+
+The **Hungarian method** of @kuhn1955 maintains such prices and searches for a perfect
+matching using only tight edges. When the search gets stuck, it adjusts the prices to
+make new edges tight, and repeats. Kuhn named it after the Hungarian mathematicians
+Kőnig and Egerváry, whose ideas it combines. Its variants run in polynomial time.
+
+### General graphs: odd cycles break integrality
+
+In a non-bipartite graph the matching LP can have **fractional** vertices. In a triangle,
+$x_e = \tfrac12$ on all three edges satisfies every degree constraint and has value
+$\tfrac32$, but any real matching has only one edge.
+
+```{python}
+#| label: fig-odd-cycle
+#| fig-cap: "Left: in a triangle, putting 1/2 on every edge satisfies all degree constraints ($x$-values at each node add to 1) and gives the matching LP the value 3/2, although a matching can contain only one edge. Right: Edmonds' odd-set inequality for the three nodes says the edges inside them can carry at most $(3-1)/2 = 1$ in total; it cuts off the fractional point and leaves only real matchings."
+fig, axes = plt.subplots(1, 2, figsize=(7.4, 3.0))
+tri = {"u": (0, 0), "v": (2, 0), "w": (1, 1.6)}
+E = [("u", "v"), ("v", "w"), ("w", "u")]
+for ax, frac in zip(axes, (True, False)):
+    for (a, b_) in E:
+        p, q = np.array(tri[a]), np.array(tri[b_])
+        hl = frac or (a, b_) == ("u", "v")
+        ax.plot(*np.array([p, q]).T, color=COLORS["weak"] if hl else "#999999",
+                lw=3 if hl else 1.2, ls="--" if frac else "-", zorder=1)
+        if frac:
+            m = (p + q) / 2
+            ax.text(*m, "1/2", ha="center", va="center", fontsize=10,
+                    bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none"), zorder=3)
+    for v, (x, y) in tri.items():
+        ax.add_patch(mpatches.Circle((x, y), 0.17, fc="white", ec="black", lw=1.2, zorder=4))
+        ax.text(x, y, v, ha="center", va="center", fontsize=10, zorder=5)
+    ax.set_xlim(-0.4, 2.4); ax.set_ylim(-0.4, 2.0); ax.set_aspect("equal"); ax.axis("off")
+axes[0].set_title("matching LP: value 3/2", fontsize=10)
+axes[1].set_title("with $x_{uv} + x_{vw} + x_{wu} \\leq 1$: value 1", fontsize=10)
+fig.tight_layout()
+plt.show()
+```
+
+@edmonds1965b found the missing constraints. For every set $U$ of nodes with an **odd**
+number of elements,
+$$
+\sum_{e \subseteq U} x_e \;\le\; \frac{|U| - 1}{2},
+$$
+since a matching can pair up at most $(|U| - 1)/2$ couples inside $U$.
+
+::: {.callout-important}
+## Theorem (Edmonds' matching polytope)
+For any graph, the degree constraints $\sum_{e \ni v} x_e \le 1$, the bounds $x \ge 0$,
+and the odd-set inequalities together describe the convex hull of all matchings: every
+vertex of this polytope is a matching.
+:::
+
+There are exponentially many odd sets, so this LP cannot be written out in full.
+Instead, the **blossom algorithm** of @edmonds1965a finds a maximum matching directly in
+polynomial time, by finding augmenting paths and shrinking odd cycles ("blossoms") when
+they get in the way. In the same paper Edmonds argued that "efficient" should mean
+"polynomial-time," an idea that later became central to complexity theory.
+
+## Why it works
+
+::: {.callout-tip collapse="true"}
+## Proof sketch: Kőnig's theorem
+Weak duality gives "every matching $\le$ every cover." For equality, both LPs above have
+the bipartite incidence matrix (or its transpose) as their constraint matrix, which is
+totally unimodular. So the primal has an integer optimal solution, which is a 0/1 vector
+(the degree constraints keep each $x_e \le 1$): a matching. The dual has an integer
+optimal solution, which can be taken 0/1: a vertex cover. By strong duality their sizes
+are equal.
+:::
+
+## In practice
+
+- **Assignment problems** (people to shifts, tasks to machines, students to projects)
+  with one-to-one constraints are solved exactly by LP or by Hungarian-type algorithms,
+  even with thousands of items.
+- **Once extra rules appear** (skills, time windows, a worker doing several tasks with a
+  budget), integrality is usually lost and the problem becomes an integer program. The
+  matching structure then often provides a strong relaxation.
+- **Edmonds' theorem is the model** for polyhedral combinatorics: describe the convex hull
+  of the solutions, and LP duality gives min-max theorems and algorithms. Cutting-plane
+  methods for hard problems try to imitate it.
+
+## Further reading
+
+- @schrijver2005 for the history of matching and assignment, from Kőnig and Egerváry to
+  Kuhn.
+- @edmonds1965a, which reads well even today.
+- Previous: [Total Unimodularity](total-unimodularity.qmd).

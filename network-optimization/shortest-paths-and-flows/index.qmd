@@ -1,0 +1,22 @@
+---
+kind: subcategory
+title: "Shortest Paths and Flows"
+description: "Shortest paths, maximum flow and minimum cut, and minimum-cost flow."
+order: 1
+toc: false
+listing:
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "order"
+    fields: [title, description, categories]
+---
+
+The three basic network problems. Each one is an LP, and each one has a combinatorial algorithm and a duality theorem with a clear meaning on the network.
+
+## Topics
+
+::: {#topics}
+:::

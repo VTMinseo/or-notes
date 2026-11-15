@@ -1,0 +1,204 @@
+---
+kind: topic
+title: "Total Unimodularity"
+description: "When an LP has integer vertices for every integer right-hand side: totally unimodular matrices, the Hoffman–Kruskal theorem, and why network problems are integral."
+categories: [network-optimization, integer-programming, polyhedra]
+order: 1
+level: intermediate
+prerequisites: "Polyhedra and vertices; min-cost flow"
+---
+
+```{python}
+#| label: setup
+import itertools
+import numpy as np
+import matplotlib.pyplot as plt
+from IPython.display import Markdown
+from _lib.orplot import new_axes, shade_polygon, clip_halfplane, lattice_points, mark_point, COLORS
+from _lib.toy_network import ARCS, NODES, incidence_matrix
+
+def polygon(A, b, box=20):
+    P = [(-box, -box), (box, -box), (box, box), (-box, box)]
+    for a, beta in zip(A, b):
+        P = clip_halfplane(P, a, beta)
+    return P
+
+def lp_vertex_max(A, b, c):
+    """Best vertex of the 2D polygon (by enumeration)."""
+    best = None
+    for i, j in itertools.combinations(range(len(A)), 2):
+        M = np.array([A[i], A[j]], float)
+        if abs(np.linalg.det(M)) < 1e-9:
+            continue
+        v = np.linalg.solve(M, [b[i], b[j]])
+        if np.all(np.array(A) @ v <= np.array(b) + 1e-9) and (best is None or c @ v > c @ best):
+            best = v
+    return best
+
+N = incidence_matrix()
+dets = set()
+count = 0
+for k in range(1, min(N.shape) + 1):
+    for R in itertools.combinations(range(N.shape[0]), k):
+        for C in itertools.combinations(range(N.shape[1]), k):
+            dets.add(int(round(np.linalg.det(N[np.ix_(R, C)]))))
+            count += 1
+```
+
+## The idea
+
+The [maximum-flow](../shortest-paths-and-flows/max-flow-min-cut.qmd) and
+[min-cost flow](../shortest-paths-and-flows/min-cost-flow.qmd) pages claimed that these
+LPs have integer optimal solutions whenever the data are integers. For most LPs that is
+false. What is special about networks?
+
+The answer is in the constraint matrix. An optimal solution can be taken at a
+[vertex](../../foundations/polyhedra/polyhedra-and-vertices.qmd), and a vertex solves a
+square system $Bx = b$ made of tight constraints. By Cramer's rule,
+$$
+x_j = \frac{\det B_j}{\det B},
+$$
+where $B_j$ is $B$ with column $j$ replaced by $b$. If $b$ and $B$ are integer, the
+numerator is an integer. So **if every such $\det B$ is $\pm 1$, every vertex is
+integer**, whatever the (integer) right-hand side.
+
+```{python}
+#| label: fig-tu-vs-not
+#| fig-cap: "Two LPs with integer data, maximizing $x_1 + x_2$; dots are integer points. Hollow circles are vertices. Left: the constraints $x_1 \\le 3$, $x_2 \\le 2$, $x_1 + x_2 \\le 4$, $x \\ge 0$ have a totally unimodular matrix, so every vertex is an integer point and the LP optimum (green) is an integer solution. Right: $2x_1 + x_2 \\le 6$, $x_1 + 3x_2 \\le 7$, $x \\ge 0$ is not totally unimodular; the LP optimum (red) is the fractional vertex $(11/5, 8/5)$, and rounding it to the nearest integer point $(2, 2)$ gives an infeasible point."
+cases = [
+    (np.array([[1, 0], [0, 1], [1, 1], [-1, 0], [0, -1]]), np.array([3, 2, 4, 0, 0]), "totally unimodular"),
+    (np.array([[2, 1], [1, 3], [-1, 0], [0, -1]]), np.array([6, 7, 0, 0]), "not totally unimodular"),
+]
+cvec = np.array([1.0, 1.0])
+fig, axes = new_axes(2, xlim=(-0.5, 4.5), ylim=(-0.5, 4.5), size=3.8)
+for ax, (A, b, title) in zip(axes, cases):
+    P = polygon(A, b)
+    good = title.startswith("totally")
+    shade_polygon(ax, P, COLORS["hull"] if good else COLORS["weak"], alpha=0.2)
+    pts = lattice_points(P)
+    ax.scatter(*np.array(pts).T, s=16, color="black", zorder=4)
+    for q in P:
+        ax.scatter(*q, s=40, facecolor="white", edgecolor="black", zorder=4, lw=1.2)
+    v = lp_vertex_max(A, b, cvec)
+    ax.scatter(*v, s=90, color=COLORS["hull"] if good else COLORS["weak"], zorder=6,
+               edgecolor="white", lw=1.2)
+    ax.set_title(title, fontsize=11)
+fig.tight_layout()
+plt.show()
+```
+
+## The math
+
+### Definition and the main theorem
+
+::: {.callout-note}
+## Definition
+A matrix $A$ is **totally unimodular** (TU) if every square submatrix has determinant
+$-1$, $0$ or $1$. In particular, every entry is $-1$, $0$ or $1$.
+:::
+
+::: {.callout-important}
+## Theorem (Hoffman–Kruskal)
+Let $A$ be an integer matrix. The polyhedron $\{x : Ax \le b,\ x \ge 0\}$ has only integer
+vertices for **every** integer vector $b$ if and only if $A$ is totally unimodular.
+:::
+
+This is due to @hoffman1956. The "if" direction is the Cramer's-rule argument above, and
+it is the part used in practice. If $A$ is TU, then so are $-A$, $A^\top$, and $A$ with
+identity rows or columns added. So equality constraints, upper bounds on variables, and
+the **dual LP** are all integral too: integer primal *and* integer dual optima.
+
+### Which matrices are TU?
+
+::: {.callout-important}
+## Theorem (network matrices are TU)
+The following matrices are totally unimodular:
+
+1. the **node–arc incidence matrix** of a directed graph (one column per arc, $+1$ at its
+   tail, $-1$ at its head);
+2. the **node–edge incidence matrix** of a **bipartite** undirected graph;
+3. **interval matrices**: 0/1 matrices in which the ones in each column are consecutive.
+:::
+
+Case 1 covers every flow problem on the previous pages: their constraints are
+"incidence matrix times $x$ equals supplies, plus bounds." Case 2 gives
+[bipartite matching](matching.qmd). Case 3 arises in scheduling: "each shift covers a
+consecutive block of hours."
+
+As a check, here is the incidence matrix of the toy network. All
+`{python} f"{count:,}"` of its square submatrices have a determinant in
+`{python} "{" + ", ".join(str(d) for d in sorted(dets)) + "}"`.
+
+```{python}
+#| label: fig-incidence
+#| fig-cap: "The node–arc incidence matrix of the toy network: one row per node, one column per arc, $+1$ (blue) where the arc leaves the node and $-1$ (orange) where it enters. Each column has exactly one $+1$ and one $-1$, which is what makes it totally unimodular."
+fig, ax = plt.subplots(figsize=(6.6, 3.0))
+cmap = {1: COLORS["p1"], -1: COLORS["p2"], 0: "white"}
+for i in range(N.shape[0]):
+    for j in range(N.shape[1]):
+        ax.add_patch(plt.Rectangle((j, -i), 1, 1, fc=cmap[N[i, j]], ec="#cccccc",
+                                   alpha=0.85 if N[i, j] else 1))
+        if N[i, j]:
+            ax.text(j + 0.5, -i + 0.5, f"{N[i, j]:+d}", ha="center", va="center",
+                    fontsize=10, color="white", fontweight="bold")
+ax.set_xticks(np.arange(N.shape[1]) + 0.5)
+ax.set_xticklabels([f"{u}→{v}" for u, v, *_ in ARCS], fontsize=9)
+ax.set_yticks(-np.arange(N.shape[0]) + 0.5)
+ax.set_yticklabels(NODES)
+ax.set_xlim(0, N.shape[1]); ax.set_ylim(-N.shape[0] + 1, 1)
+ax.tick_params(length=0)
+for sp in ax.spines.values():
+    sp.set_visible(False)
+ax.set_aspect("equal")
+plt.show()
+```
+
+### Where TU stops: odd cycles
+
+The incidence matrix of a **triangle** (three nodes, three edges, every edge in two
+rows) is not TU: its determinant is $2$. That single fact is why matching in
+non-bipartite graphs is harder, as the [matching](matching.qmd) page shows.
+
+## Why it works
+
+::: {.callout-tip collapse="true"}
+## Proof sketch: TU gives integer vertices
+A vertex of $\{x : Ax \le b,\ x \ge 0\}$ is the unique solution of $n$ linearly independent
+tight constraints, a square system $Bx = b'$ where the rows of $B$ come from $A$ or from
+$-I$ (for $x_j \ge 0$), and $b'$ is integer. Expanding the determinant along the identity
+rows reduces $\det B$ to $\pm$ the determinant of a square submatrix of $A$, so
+$\det B = \pm 1$. By Cramer's rule every coordinate of the vertex is an integer.
+:::
+
+::: {.callout-tip collapse="true"}
+## Proof sketch: incidence matrices of directed graphs are TU
+Take any square submatrix $B$ and argue by induction on its size. If some column of $B$
+is zero, $\det B = 0$. If some column has exactly one nonzero ($\pm 1$), expand along it:
+$\det B = \pm \det B'$ for a smaller submatrix, which is in $\{-1, 0, 1\}$ by induction.
+Otherwise every column has both its $+1$ and its $-1$ inside $B$, so the rows of $B$ add
+up to zero and $\det B = 0$.
+
+For a bipartite graph, multiply the rows of one side by $-1$: the matrix becomes a
+directed incidence matrix, and multiplying rows by $-1$ does not change TU.
+:::
+
+## In practice
+
+- **Look for network structure.** If a model's constraints are flow conservation plus
+  bounds, the LP relaxation already solves the integer problem.
+- **Adding one side constraint can break it.** A budget constraint across arcs, or a
+  "use at most $k$ arcs" constraint, usually destroys total unimodularity. The LP
+  relaxation is then still strong, but no longer exact, and
+  [decomposition methods](../../decomposition-methods/index.qmd) often exploit the
+  network part.
+- **Integer optimal duals** also matter: in flow problems they give integer potentials,
+  and integer min-max theorems such as max-flow min-cut [@ford1956a] and the bipartite
+  matching theorem on the [Matching](matching.qmd) page.
+
+## Further reading
+
+- @hoffman1956; the 2010 reprint opens with the authors' account of how the paper was
+  written.
+- @schrijver1986, Chapter 19, for many characterizations of TU matrices.
+- Previous: [Minimum-Cost Flow](../shortest-paths-and-flows/min-cost-flow.qmd). Next:
+  [Matching](matching.qmd).

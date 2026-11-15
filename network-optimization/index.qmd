@@ -1,0 +1,47 @@
+---
+kind: category
+title: "Network and Combinatorial Optimization"
+description: "Shortest paths, maximum flows, minimum-cost flows, total unimodularity and matching."
+order: 1.5
+toc: false
+listing:
+  - id: subcats
+    contents: "**/*.qmd"
+    include:
+      kind: subcategory
+    type: table
+    sort: "order"
+    fields: [title, description]
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "title"
+    fields: [title, description, categories]
+---
+
+Many optimization problems live on a **network**: nodes joined by arcs, with lengths,
+costs or capacities on the arcs. Routing, logistics, scheduling and assignment problems
+all have this shape. Network problems are special for two reasons:
+
+- they can be solved by fast **combinatorial algorithms** (labels, paths, augmentations)
+  instead of general-purpose LP methods;
+- they are LPs whose optimal solutions are **automatically integer**. So these are
+  integer problems that are as easy as linear ones.
+
+All pages here use the same small network with six nodes $s, a, b, c, d, t$ (and a
+small worker–job graph for matching), so the numbers carry over between pages.
+
+Prerequisite: [LP Duality](../linear-programming/duality/lp-duality.qmd). Integrality
+links forward to [Integer Programming](../integer-programming/index.qmd).
+
+## Subcategories
+
+::: {#subcats}
+:::
+
+## All topics in this category
+
+::: {#topics}
+:::

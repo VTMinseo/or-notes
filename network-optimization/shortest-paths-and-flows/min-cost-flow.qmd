@@ -1,0 +1,172 @@
+---
+kind: topic
+title: "Minimum-Cost Flow"
+description: "Ship a given amount through a network at least cost: the model that contains shortest paths, max flow, transportation and assignment, with its negative-cycle and potential optimality conditions."
+categories: [network-optimization, flows, duality]
+order: 3
+level: intro
+prerequisites: "Shortest paths; maximum flow; LP duality"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from _lib.orplot import COLORS, mark_point
+from _lib.toy_network import ARCS, NODES, POS, min_cost_flow, draw_network
+
+AMOUNT = 12
+sol = min_cost_flow(AMOUNT)
+flow = {(u, v): sol["x"][j] for j, (u, v, *_) in enumerate(ARCS)}
+pi = sol["potential"]
+```
+
+## The idea
+
+Combine the two previous problems. Each arc now has a **cost per unit** and a
+**capacity**, and we must ship a given amount from $s$ to $t$ (or, more generally,
+from supply nodes to demand nodes) at the least total cost.
+
+In the toy network, the cheapest way to ship $12$ units costs $112$. The first units
+go along the shortest path ($8$ per unit), but its arcs fill up, and later units must
+take more expensive routes.
+
+```{python}
+#| label: fig-mcf
+#| fig-cap: "A minimum-cost flow of 12 units in the toy network; each arc shows flow / capacity (costs are those on the Shortest Paths page). The blue number next to each node is its potential $\\pi_v$, the dual price of one more unit at that node. Arcs carry flow only when they are \"worth it\" at these prices: see the optimality conditions below."
+fig, ax = plt.subplots(figsize=(6.4, 3.7))
+draw_network(ax, label={(u, v): f"{flow[(u, v)]:g}/{k}" for u, v, w, k in ARCS},
+             dim=[e for e in flow if flow[e] < 1e-9])
+for v in NODES:
+    x, y = POS[v]
+    ax.text(x, y + (0.27 if y > 0.5 else -0.36), f"{round(pi[v], 6) + 0:g}", ha="center", fontsize=10,
+            color=COLORS["p1"], fontweight="bold")
+plt.show()
+```
+
+## The math
+
+### The model
+
+Let each node $v$ have a **supply** $b_v$ (positive at sources, negative at sinks, zero
+at transshipment nodes, summing to zero). With costs $c_{ij}$ and capacities $u_{ij}$:
+$$
+\min \sum_{(i,j)} c_{ij} x_{ij}
+\quad\text{s.t.}\quad
+\sum_{j} x_{ij} - \sum_{j} x_{ji} = b_i \ \ \text{for every node } i,
+\qquad 0 \le x_{ij} \le u_{ij}.
+$$
+Many classical problems are special cases:
+
+| Problem | How it fits |
+|---|---|
+| [Shortest path](shortest-paths.qmd) | supply 1 at $s$, demand 1 at $t$, no capacities |
+| [Maximum flow](max-flow-min-cut.qmd) | cost 0 on all arcs, plus a return arc $t \to s$ with cost $-1$ |
+| Transportation [@hitchcock1941] | supply nodes connected directly to demand nodes |
+| Assignment | transportation with all supplies and demands equal to 1 |
+
+### Optimality: no negative cycles
+
+Given a feasible flow, look at its residual network: forward arcs keep cost $c_{ij}$,
+backward arcs (cancelling flow) get cost $-c_{ij}$. A cycle of negative total cost in
+the residual network is a way to reroute flow and save money while still meeting all
+supplies and demands.
+
+::: {.callout-important}
+## Theorem (negative-cycle optimality)
+A feasible flow is a minimum-cost flow if and only if its residual network contains no
+cycle of negative cost.
+:::
+
+This gives the **cycle-canceling** algorithm of @klein1967: start from any feasible flow
+(for example, from a max-flow computation), and as long as a negative cycle exists, push
+flow around it.
+
+### Optimality: potentials and reduced costs
+
+The dual LP assigns a **potential** $\pi_v$ to each node, as for shortest paths. The
+**reduced cost** of an arc is $\bar c_{ij} = c_{ij} + \pi_i - \pi_j$, its cost after
+paying $\pi_i$ to take a unit at $i$ and receiving $\pi_j$ for delivering it at $j$.
+
+::: {.callout-important}
+## Theorem (reduced-cost optimality)
+A feasible flow $x$ is optimal if and only if there are potentials $\pi$ such that for
+every arc:
+$$
+\bar c_{ij} > 0 \Rightarrow x_{ij} = 0, \qquad
+\bar c_{ij} < 0 \Rightarrow x_{ij} = u_{ij}, \qquad
+0 < x_{ij} < u_{ij} \Rightarrow \bar c_{ij} = 0 .
+$$
+:::
+
+This is [complementary slackness](../../linear-programming/duality/lp-duality.qmd) for
+the min-cost flow LP. In the figure: $s \to b$ has $\bar c = 4 + 0 - 3 = 1 > 0$ and
+carries nothing; $a \to c$ has $\bar c = 7 + 2 - 10 = -1 < 0$ and is full; $d \to t$ has
+$\bar c = 5 + 6 - 11 = 0$ and is partly used.
+
+### The cost of shipping more is convex
+
+Let $C(k)$ be the minimum cost of shipping $k$ units. It is convex and piecewise linear,
+like every LP [value function](../../linear-programming/duality/sensitivity-analysis.qmd).
+Its slope at $k$ is the cost of the cheapest augmenting path in the residual network of
+the optimal $k$-unit flow: the marginal cost of one more unit.
+
+```{python}
+#| label: fig-mcf-cost
+#| fig-cap: "Minimum cost $C(k)$ of shipping $k$ units from $s$ to $t$ in the toy network, up to the maximum flow 18. The marginal cost per unit rises from 8 (the shortest path) to 12 as cheap arcs fill up. The red dot is the 12-unit flow shown above."
+K = np.arange(0, 19)
+Ck = np.array([min_cost_flow(k)["cost"] for k in K])
+fig, ax = plt.subplots(figsize=(5.6, 3.5))
+ax.plot(K, Ck, color=COLORS["p1"], lw=2.2, marker="o", ms=3)
+mark_point(ax, (AMOUNT, sol["cost"]), COLORS["weak"])
+slopes = np.diff(Ck)
+for k0, k1 in [(0, 4), (5, 11), (12, 18)]:
+    km = (k0 + k1) / 2
+    ax.text(km - 0.3, np.interp(km, K, Ck) + 14, f"{slopes[k0]:g} per unit", fontsize=9,
+            ha="center", color=COLORS["p1"])
+ax.set_xlabel("units shipped, $k$"); ax.set_ylabel("minimum cost $C(k)$")
+ax.set_xlim(0, 18.5); ax.set_ylim(0, 205); ax.set_xticks(range(0, 19, 3))
+plt.show()
+```
+
+::: {.callout-important}
+## Theorem (integrality)
+If all supplies and capacities are integers and the problem is feasible, there is an
+optimal flow with integer values on every arc.
+:::
+
+So "ship whole trucks" or "assign whole people" never needs integer programming when
+the problem is a min-cost flow. The reason is
+[total unimodularity](../integrality-and-matching/total-unimodularity.qmd).
+
+## Why it works
+
+::: {.callout-tip collapse="true"}
+## Proof sketch: negative cycles
+If the residual network has a negative cycle, pushing a small amount around it keeps
+every supply and demand satisfied and every capacity respected, and lowers the cost, so
+the flow was not optimal.
+
+Conversely, if $x$ is feasible but not optimal, let $x^\star$ be optimal. The difference
+$x^\star - x$ satisfies "zero net supply" at every node, so it decomposes into flow around
+cycles, each of which is a cycle in the residual network of $x$. Their costs add up to
+$c^\top x^\star - c^\top x < 0$, so at least one of them is negative.
+:::
+
+## In practice
+
+- **Very large instances are routine.** The simplex method [@dantzig1951] specialized to
+  networks, where a basis is a spanning tree, and dedicated combinatorial algorithms solve
+  min-cost flow problems with millions of arcs.
+- **Logistics and distribution** models (plants, warehouses, customers, with shipping
+  costs and capacities) are min-cost flow problems, as long as there are no fixed costs
+  or other logic. Fixed costs make them integer programs.
+- **As a building block.** Min-cost flow is the subproblem in many decompositions and
+  the LP relaxation of many network design problems.
+
+## Further reading
+
+- @schrijver2005 for the history of the transportation problem.
+- @klein1967 for the cycle-canceling method.
+- Previous: [Maximum Flow and Minimum Cut](max-flow-min-cut.qmd). Next:
+  [Total Unimodularity](../integrality-and-matching/total-unimodularity.qmd).

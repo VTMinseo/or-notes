@@ -1,0 +1,22 @@
+---
+kind: subcategory
+title: "Integrality and Matching"
+description: "Why network LPs have integer optima (total unimodularity), and matching in bipartite and general graphs."
+order: 2
+toc: false
+listing:
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "order"
+    fields: [title, description, categories]
+---
+
+When does an LP automatically give integer solutions? Total unimodularity answers it for networks and bipartite graphs. Matching shows where it stops working, and how Edmonds repaired it.
+
+## Topics
+
+::: {#topics}
+:::
