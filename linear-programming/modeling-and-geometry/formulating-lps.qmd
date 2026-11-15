@@ -1,0 +1,159 @@
+---
+kind: topic
+title: "Formulating Linear Programs"
+description: "Decision variables, a linear objective, linear constraints: how to write a problem as an LP, standard forms, and common modeling tricks."
+categories: [linear-programming, modelling]
+order: 1
+level: intro
+prerequisites: "None beyond basic algebra"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import linprog
+from _lib.orplot import COLORS
+```
+
+## The idea
+
+A linear program has three parts:
+
+1. **Decision variables**: the numbers you get to choose.
+2. **An objective**: a linear function of them, to maximize or minimize.
+3. **Constraints**: linear equations or inequalities they must satisfy.
+
+"Linear" means every term is a constant times a single variable: no products of
+variables, no powers, no "if" statements. That restriction is what makes LPs so
+tractable.
+
+**Example (the workshop).** A workshop makes chairs and tables. A chair uses 1 unit of
+wood and 2 hours of labor and earns a profit of 3; a table uses 2 units of wood and 1 hour
+of labor and earns 4. This week there are 8 units of wood and 7 hours of labor. With
+$x_1$ chairs and $x_2$ tables:
+$$
+\begin{aligned}
+\max\quad & 3x_1 + 4x_2 && \text{(profit)}\\
+\text{s.t.}\quad & x_1 + 2x_2 \le 8 && \text{(wood)}\\
+& 2x_1 + x_2 \le 7 && \text{(labor)}\\
+& x_1, x_2 \ge 0 .
+\end{aligned}
+$$
+Every constraint reads the same way: *resource used* $\le$ *resource available*. Each
+column is one activity (a product), and each row is one resource. This "activities and
+resources" reading is how most LPs are built.
+
+## A bit of history
+
+Linear programming was found twice. In 1939 Leonid Kantorovich formulated production
+planning problems of exactly this kind and proposed a way to solve them; his work became
+widely known in the West only with its 1960 translation [@kantorovich1960]. In 1947
+George Dantzig formulated the general LP for US Air Force planning and invented the
+simplex method to solve it [@dantzig1951]. Meanwhile @stigler1945 posed the famous **diet
+problem**: find the cheapest combination of foods that meets given nutritional
+requirements. He could only solve it approximately by hand, because no general method was
+available yet.
+
+## The math
+
+### General form
+
+In matrix notation, an LP is
+$$
+\max\ c^\top x \quad \text{s.t.} \quad Ax \le b, \quad x \ge 0 ,
+$$
+with $c \in \mathbb{R}^n$ the objective coefficients, $A \in \mathbb{R}^{m \times n}$ the
+technology matrix (resource $i$ used per unit of activity $j$), and $b \in \mathbb{R}^m$
+the right-hand side (resource availabilities). In the workshop,
+$A = \begin{pmatrix}1 & 2\\ 2 & 1\end{pmatrix}$, $b = (8, 7)$, $c = (3, 4)$.
+
+### Every LP can be put in any standard form
+
+Different books and solvers use different "standard forms." They are all equivalent,
+because each feature can be converted into any other:
+
+| You have | Rewrite it as |
+|---|---|
+| $\min\ c^\top x$ | $\max\ -c^\top x$ |
+| $a^\top x \ge \beta$ | $-a^\top x \le -\beta$ |
+| $a^\top x = \beta$ | $a^\top x \le \beta$ and $a^\top x \ge \beta$ |
+| $a^\top x \le \beta$ | $a^\top x + s = \beta$ with a **slack** variable $s \ge 0$ |
+| a free variable $x_j$ (any sign) | $x_j = x_j^+ - x_j^-$ with $x_j^+, x_j^- \ge 0$ |
+
+The slack form $Ax + s = b$, $x, s \ge 0$ is the one the simplex method works with. In
+the workshop, the slacks $s_1, s_2$ are the leftover wood and labor.
+
+### Modeling tricks: what LPs can and cannot express
+
+Some nonlinear-looking things are LPs in disguise. The common thread is
+[convexity](../../foundations/convexity/convex-functions.qmd).
+
+- **Maximum of linear functions.** To minimize $\max_k (a_k^\top x + \beta_k)$, add a
+  variable $t$, minimize $t$, and require $t \ge a_k^\top x + \beta_k$ for every $k$.
+- **Absolute values.** To minimize $\sum_i |r_i|$ where each $r_i$ is linear in $x$, add
+  $u_i$ with $u_i \ge r_i$ and $u_i \ge -r_i$, and minimize $\sum_i u_i$.
+- **Piecewise-linear convex costs** (for example, overtime that costs more per hour) are
+  a maximum of linear functions, so the first trick applies.
+
+Things an LP cannot express:
+
+- **Products of variables**, such as price $\times$ quantity when both are decisions.
+- **Either–or and on/off logic**, such as "a machine is either off or produces at least
+  10 units." That needs binary variables: see
+  [Disjunctive Programming](../../integer-programming/disjunctive-programming/introduction.qmd).
+- **Integrality**, such as "whole tables only." For the workshop the optimum happens to be
+  integer; in general it is not, and that is
+  [Integer Programming](../../integer-programming/index.qmd).
+
+### An example of the absolute-value trick: robust line fitting
+
+Fitting a line $y \approx \alpha + \beta t$ to data by minimizing the **sum of absolute
+errors** $\sum_i |y_i - \alpha - \beta t_i|$ is an LP by the trick above. Unlike least
+squares, it is barely moved by a single bad data point.
+
+```{python}
+#| label: fig-l1-fit
+#| fig-cap: "Fitting a line to 12 points, one of which (red) is a gross outlier. The fit minimizing the sum of absolute errors (blue) is computed by an LP and passes through the bulk of the data. The least-squares fit (dashed grey) is pulled toward the outlier, because squaring makes one large error count heavily."
+rng = np.random.default_rng(3)
+t = np.linspace(0, 10, 12)
+y = 1.0 + 0.6 * t + rng.normal(0, 0.35, t.size)
+y[9] += 6.0                                     # one outlier
+n = t.size
+# variables: alpha, beta, u_1..u_n ; minimize sum u
+cost = np.r_[0, 0, np.ones(n)]
+X = np.c_[np.ones(n), t]
+A_ub = np.block([[-X, -np.eye(n)], [X, -np.eye(n)]])   # u >= y - Xw and u >= Xw - y
+b_ub = np.r_[-y, y]
+res = linprog(cost, A_ub=A_ub, b_ub=b_ub,
+              bounds=[(None, None)] * 2 + [(0, None)] * n, method="highs")
+a1, b1 = res.x[:2]
+a2, b2 = np.linalg.lstsq(X, y, rcond=None)[0]
+fig, ax = plt.subplots(figsize=(5.4, 3.6))
+ok = np.arange(n) != 9
+ax.scatter(t[ok], y[ok], color="black", s=22, zorder=3)
+ax.scatter(t[9], y[9], color=COLORS["weak"], s=40, zorder=3, label="outlier")
+tt = np.linspace(-0.3, 10.3, 2)
+ax.plot(tt, a1 + b1 * tt, color=COLORS["p1"], lw=2.2, label="sum of |errors| (an LP)")
+ax.plot(tt, a2 + b2 * tt, color="gray", lw=1.6, ls="--", label="least squares")
+ax.set_xlabel("$t$"); ax.set_ylabel("$y$")
+ax.legend(loc="upper left", fontsize=9)
+plt.show()
+```
+
+## In practice
+
+- **Write the model in words first**: "for each product, for each resource, ...".
+  Index sets and sums come from those sentences.
+- **Check units.** Every term in a constraint must have the same units (hours, kilograms,
+  dollars).
+- **Modeling languages** (AMPL, JuMP, Pyomo, PuLP and others) let you write the
+  algebraic model directly; the solver never sees anything but $A$, $b$, $c$.
+- **Size is rarely the problem.** LPs with millions of variables are solved routinely.
+  Getting the model right is usually the hard part.
+
+## Further reading
+
+- @vanderbei2020, Chapter 1: many small modeling examples.
+- @dantzig1951 and @kantorovich1960 for the original formulations.
+- Next: [The Geometry of an LP](geometry-of-lp.qmd).

@@ -1,7 +1,7 @@
 ---
 kind: category
 title: "Linear Programming"
-description: "Polyhedra, duality, the simplex method, and sensitivity analysis."
+description: "Modeling, geometry, duality, sensitivity analysis, and the simplex and interior-point methods."
 order: 1
 toc: false
 listing:
@@ -20,6 +20,22 @@ listing:
     sort: "title"
     fields: [title, description, categories]
 ---
+
+A **linear program** (LP) optimizes a linear objective subject to linear constraints. It
+is the workhorse of Operations Research: integer-programming solvers and decomposition
+methods solve LPs over and over, and many planning problems are LPs themselves.
+
+All pages in this category use the same small example, a workshop making chairs and
+tables, so the numbers carry over from page to page:
+$$
+\max\ 3x_1 + 4x_2 \quad\text{s.t.}\quad x_1 + 2x_2 \le 8 \ (\text{wood}),\quad
+2x_1 + x_2 \le 7 \ (\text{labor}),\quad x_1, x_2 \ge 0 .
+$$
+Its optimum is $x^\star = (2, 3)$ with profit $18$.
+
+Prerequisite: the [Foundations](../foundations/index.qmd) pages, especially
+[Polyhedra and Their Vertices](../foundations/polyhedra/polyhedra-and-vertices.qmd) and
+[Farkas' Lemma](../foundations/polyhedra/farkas-lemma.qmd).
 
 ## Subcategories
 

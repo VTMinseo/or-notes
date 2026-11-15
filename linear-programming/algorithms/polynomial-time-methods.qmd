@@ -1,0 +1,220 @@
+---
+kind: topic
+title: "Polynomial-Time Methods"
+description: "LP can be solved in polynomial time: the idea of the ellipsoid method, the central path, and interior-point methods."
+categories: [linear-programming, algorithms, complexity]
+order: 2
+level: intermediate
+prerequisites: "The simplex method; LP duality; separating hyperplanes"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from _lib.orplot import new_axes, shade_polygon, clip_halfplane, mark_point, COLORS
+from _lib.toy_lp import A, b, c, vertices, all_constraints, central_path, ellipsoid_iterates
+
+G, h = all_constraints()
+V = vertices()
+
+def ellipse_xy(z, Q, k=200):
+    t = np.linspace(0, 2 * np.pi, k)
+    w, U = np.linalg.eigh(Q)
+    return (U @ np.diag(np.sqrt(w)) @ np.vstack([np.cos(t), np.sin(t)])).T + z
+```
+
+## The idea
+
+The [simplex method](simplex-method.qmd) is fast in practice, but on the
+@klee1972 examples it takes exponentially many steps. For decades it was an open
+question whether LP can be solved in **polynomial time**: with a number of arithmetic
+operations bounded by a polynomial in the size of the input. Two very different ideas
+answered it.
+
+- **The ellipsoid method** (1979) traps the feasible region in a shrinking sequence of
+  ellipsoids. It settled the theoretical question but is slow in practice.
+- **Interior-point methods** (from 1984) travel through the *inside* of the feasible
+  region along a smooth curve, the central path. They are polynomial **and** fast, and
+  are now standard in solvers alongside the simplex method.
+
+## The ellipsoid method
+
+@khachiyan1979 showed that the ellipsoid method, developed earlier for convex
+optimization, solves LP in polynomial time. The survey by @bland1981 tells the story and
+gives the details.
+
+The method answers a **feasibility** question: find a point in a convex set $T$ (for an
+LP, $T = \{x : Ax \le b\}$), or conclude that there is none. It keeps an ellipsoid $E_k$
+that is guaranteed to contain $T$:
+
+1. Look at the **center** $z_k$ of $E_k$. If $z_k \in T$, stop.
+2. Otherwise some constraint $a_i^\top x \le b_i$ is violated at $z_k$. The hyperplane
+   $a_i^\top x = a_i^\top z_k$ through the center [separates](../../foundations/convexity/separating-hyperplanes.qmd)
+   $z_k$ from $T$, so $T$ lies in the half of $E_k$ where $a_i^\top x \le a_i^\top z_k$.
+3. Let $E_{k+1}$ be the smallest ellipsoid containing that half-ellipsoid. Repeat.
+
+```{python}
+#| label: fig-ellipsoid
+#| fig-cap: "The ellipsoid method looking for a workshop plan with profit at least 17 (the small green region $T$ near the optimal vertex). In each panel, the current ellipse (blue) is guaranteed to contain $T$. Its center (dot) violates a constraint, so the hyperplane through the center parallel to that constraint (dashed orange) cuts away a half that cannot contain $T$. The next ellipse (light blue) is the smallest one containing the remaining half. The last panel shows the step at which a center first lands in $T$."
+G2, h2 = np.vstack([G, -c]), np.append(h, -17.0)
+its = ellipsoid_iterates(G2, h2, center=(4, 4), radius=6, iters=12)
+T = V.tolist()
+for g, v in zip(G2, h2):
+    T = clip_halfplane(T, g, v)
+show = [0, 1, 2, len(its) - 1]
+fig, axes = new_axes(4, xlim=(-2.5, 10.5), ylim=(-2.5, 10.5), size=3.0)
+for ax, k in zip(axes, show):
+    z, Q = its[k]
+    shade_polygon(ax, V, "#888888", alpha=0.15, lw=1.0)
+    shade_polygon(ax, T, COLORS["hull"], alpha=0.7, lw=1.2)
+    ax.plot(*ellipse_xy(z, Q).T, color=COLORS["p1"], lw=1.8)
+    viol = G2 @ z - h2
+    if k + 1 < len(its):
+        a = G2[int(np.argmax(viol))]
+        d = np.array([-a[1], a[0]]) / np.linalg.norm(a)
+        ax.plot(*np.array([z - 20 * d, z + 20 * d]).T, color=COLORS["p2"], ls="--", lw=1.4)
+        z2, Q2 = its[k + 1]
+        ax.plot(*ellipse_xy(z2, Q2).T, color=COLORS["p1"], lw=1.2, alpha=0.4)
+        mark_point(ax, z, COLORS["p1"], size=40)
+        ax.set_title(f"step {k}", fontsize=10)
+    else:
+        mark_point(ax, z, COLORS["weak"], size=50)
+        ax.set_title(f"step {k}: center in $T$", fontsize=10)
+    ax.set_xlim(-2.5, 10.5); ax.set_ylim(-2.5, 10.5)
+    ax.set_xlabel(""); ax.set_ylabel("")
+fig.tight_layout()
+plt.show()
+```
+
+::: {.callout-important}
+## Theorem (volume shrinks geometrically)
+In $\mathbb{R}^n$, each step shrinks the volume of the ellipsoid by a factor of at most
+$e^{-1/(2(n+1))}$, no matter which violated constraint is used.
+:::
+
+If $T$ is nonempty, a rounding argument shows it contains a small ball whose volume is
+bounded below in terms of the bit length $L$ of the data. So after a number of steps
+polynomial in $n$ and $L$, either a center has landed in $T$, or the ellipsoid has
+become too small to contain it and $T$ is empty. Optimization reduces to feasibility,
+for example by asking for primal and dual feasible solutions with equal objective
+values (see [LP Duality](../duality/lp-duality.qmd)).
+
+The method never looks at the constraints as a list. It only needs a **separation
+oracle**: given a point, either confirm it is in $T$ or return a separating hyperplane.
+@grotschel1981 turned this into a general principle: optimizing a linear function over a
+convex set is polynomial-time whenever separating from it is. That makes the ellipsoid
+method a powerful theoretical tool in combinatorial optimization, even for sets with
+exponentially many inequalities.
+
+## Interior-point methods
+
+@karmarkar1984 gave a different polynomial-time algorithm, with a better worst-case
+bound ($O(n^{3.5} L)$ arithmetic operations) and, crucially, good practical
+performance. It started a wave of **interior-point methods**. The variants used today
+are best understood through the logarithmic barrier and the central path, ideas that go
+back to the barrier methods of @fiacco1968.
+
+### The barrier problem and the central path
+
+Write all constraints as $g_i^\top x \le h_i$ (including $x \ge 0$), with slacks
+$s_i = h_i - g_i^\top x$. For a parameter $\mu > 0$, solve
+$$
+\max_x\ \ c^\top x + \mu \sum_i \log s_i .
+$$
+The log terms go to $-\infty$ at the boundary, so they act as a **barrier** that keeps
+$x$ strictly inside. The problem is strictly concave and, for a bounded region, has a
+unique solution $x(\mu)$. As $\mu$ goes from $\infty$ down to $0$, these solutions trace
+the **central path**: it starts at the most interior point of the region (the analytic
+center) and ends at an optimal solution of the LP.
+
+```{python}
+#| label: fig-central-path
+#| fig-cap: "The central path of the workshop LP (orange). Each point $x(\\mu)$ maximizes profit plus $\\mu$ times the log-barrier. For large $\\mu$ the barrier dominates and $x(\\mu)$ sits near the analytic center, deep inside the region; as $\\mu$ shrinks, the path bends toward the optimal vertex $(2, 3)$, approaching it from the interior. An interior-point method follows this curve with Newton steps instead of walking along the edges."
+mus = np.logspace(3, -3, 160)
+path = central_path(mus)
+fig, ax = new_axes(1, xlim=(-0.4, 4.2), ylim=(-0.4, 4.6), size=4.6)
+shade_polygon(ax, V, "#888888", alpha=0.18, lw=1.6)
+ax.plot(*path.T, color=COLORS["p2"], lw=2.6)
+for mu, off in ((100, (8, -4)), (3, (8, -4)), (1, (6, -14)), (0.1, (-44, 8))):
+    p = central_path([mu])[0]
+    ax.scatter(*p, color=COLORS["p2"], s=26, zorder=5, edgecolor="white")
+    ax.annotate(f"$\\mu = {mu:g}$", p, xytext=off, textcoords="offset points", fontsize=9)
+mark_point(ax, (2, 3), COLORS["weak"])
+ax.annotate("optimum", (2, 3), xytext=(8, 6), textcoords="offset points", fontsize=9)
+plt.show()
+```
+
+::: {.callout-important}
+## Theorem (the duality gap on the central path)
+Let the LP have $N$ inequality constraints (counting $x \ge 0$). Every point $x(\mu)$ on
+the central path comes with a dual feasible solution $y(\mu)$ whose duality gap is
+exactly $N\mu$. In particular,
+$$
+z^\star - c^\top x(\mu) \;\le\; N \mu .
+$$
+:::
+
+So to get within $\varepsilon$ of the optimum, it is enough to reach the central path
+point for $\mu = \varepsilon / N$. A **path-following method** does this by alternating
+two moves: decrease $\mu$ by a constant factor, then take one or a few Newton steps to
+get back close to the new $x(\mu)$. Because the path is smooth and Newton's method
+converges fast near it, the number of iterations grows only slowly with the problem
+size, and each iteration is one large, sparse linear solve.
+
+## Why it works
+
+::: {.callout-tip collapse="true"}
+## Proof sketch: the duality gap on the central path
+At $x(\mu)$ the gradient of the barrier objective is zero:
+$c = \mu \sum_i g_i / s_i$. Define $y_i = \mu / s_i > 0$. Then $\sum_i y_i g_i = c$, so
+$y$ is feasible for the dual $\min\{h^\top y : \sum_i y_i g_i = c,\ y \ge 0\}$. The gap
+is
+$$
+h^\top y - c^\top x = \sum_i y_i (h_i - g_i^\top x) = \sum_i \frac{\mu}{s_i} s_i = N\mu .
+$$
+By weak duality, $z^\star \le h^\top y = c^\top x(\mu) + N\mu$.
+
+In the workshop, $N = 4$; at $\mu = 0.1$ the central path point is about
+$(1.92, 3.01)$ with profit about $17.80$, within the guaranteed $0.4$ of $18$.
+:::
+
+::: {.callout-tip collapse="true"}
+## Why the ellipsoid shrinks
+After an affine change of coordinates, $E_k$ is the unit ball and the cut is a
+hyperplane through its center. The smallest ellipsoid containing a half-ball can be
+written down explicitly: it is shorter by a factor $n/(n+1)$ in the cut direction and
+longer by $n/\sqrt{n^2 - 1}$ in the others. Its volume relative to the ball is
+$$
+\frac{n}{n+1}\Big(\frac{n^2}{n^2-1}\Big)^{(n-1)/2} \;<\; e^{-1/(2(n+1))}.
+$$
+Affine maps scale all volumes by the same factor, so the ratio holds for every step.
+:::
+
+## Simplex vs. ellipsoid vs. interior point
+
+| | Simplex | Ellipsoid | Interior point |
+|---|---|---|---|
+| Worst case | exponential (Klee–Minty) | polynomial | polynomial |
+| In practice | fast | slow | fast, especially on very large LPs |
+| Moves along | edges of the region | centers of ellipsoids | the inside, near the central path |
+| Returns | a vertex (basic solution) | a feasible point | a point near the optimal face |
+| Warm start after a small change | easy | — | hard |
+
+## In practice
+
+- **Both kinds of solver are used.** Commercial and open-source LP solvers offer
+  simplex and interior-point ("barrier") algorithms, and often run them in parallel.
+- **Crossover.** An interior-point method ends near, but not exactly at, a vertex. When a
+  basic solution is needed (for sensitivity analysis or warm starts), solvers run a
+  short "crossover" phase that moves to a nearby vertex.
+- **Inside branch-and-bound**, where many closely related LPs are solved, the dual
+  simplex method is usually preferred because it warm-starts from the previous basis.
+- **The ellipsoid method is a theory tool.** Its importance is in proofs, especially
+  "separation is as easy as optimization."
+
+## Further reading
+
+- @bland1981 for the ellipsoid method and its history.
+- @vanderbei2020, Chapters 17–18 (the central path and path-following methods).
+- Previous: [The Simplex Method](simplex-method.qmd).

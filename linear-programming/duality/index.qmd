@@ -1,0 +1,22 @@
+---
+kind: subcategory
+title: "Duality and Sensitivity"
+description: "The dual LP, complementary slackness, shadow prices, and how the optimum responds to changes in the data."
+order: 2
+toc: false
+listing:
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "order"
+    fields: [title, description, categories]
+---
+
+Every LP comes with a second LP, its **dual**, that prices the resources of the first. The dual certifies optimality and tells you what each resource is worth at the margin.
+
+## Topics
+
+::: {#topics}
+:::

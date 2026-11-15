@@ -1,0 +1,22 @@
+---
+kind: subcategory
+title: "Algorithms"
+description: "The simplex method, its worst case, and the polynomial-time ellipsoid and interior-point methods."
+order: 3
+toc: false
+listing:
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "order"
+    fields: [title, description, categories]
+---
+
+How LPs are actually solved: the simplex method walks along the boundary, and interior-point methods cut through the middle. The ideas and the main results, without implementation details.
+
+## Topics
+
+::: {#topics}
+:::

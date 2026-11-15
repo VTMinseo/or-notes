@@ -66,8 +66,10 @@ The site cites its sources the way a research paper would. These rules are not o
   `draw_structure(ax, "benders" | "dw", K=3)` (linking variables vs. linking constraints).
 - Shared toy models, so related pages show consistent numbers: `_lib/toy_benders.py`
   (Benders loop, Routine 1 of Fang et al.), `_lib/toy_dw.py` (column generation,
-  LP / Dantzig–Wolfe / integer bounds), and `_lib/toy_robust.py` (2-variable robust LP,
-  Bertsimas–Sim protection function and bounds B(n, Γ), robust knapsack).
+  LP / Dantzig–Wolfe / integer bounds), `_lib/toy_robust.py` (2-variable robust LP,
+  Bertsimas–Sim protection function and bounds B(n, Γ), robust knapsack), and
+  `_lib/toy_lp.py` (the chairs-and-tables workshop LP used on every Linear Programming
+  page: vertices, HiGHS solve with duals, simplex path, central path, ellipsoid steps).
 - Every figure cell gets `#| label: fig-...` and a `#| fig-cap:` that says what to notice.
 - Code runs with the project root as working directory (`execute-dir: project`).
 - Python dependencies go in `requirements.txt`.

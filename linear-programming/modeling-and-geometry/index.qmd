@@ -1,0 +1,22 @@
+---
+kind: subcategory
+title: "Modeling and Geometry"
+description: "How to write a problem as an LP, and what its feasible region and optimum look like."
+order: 1
+toc: false
+listing:
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "order"
+    fields: [title, description, categories]
+---
+
+How to turn a decision problem into a linear program, and what the four possible outcomes of an LP look like in a picture.
+
+## Topics
+
+::: {#topics}
+:::

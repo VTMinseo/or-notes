@@ -1,0 +1,231 @@
+---
+kind: topic
+title: "LP Duality"
+description: "Every LP has a dual LP that prices its resources. Weak and strong duality, complementary slackness, and the geometry of optimality."
+categories: [linear-programming, duality]
+order: 1
+level: intro
+prerequisites: "Formulating LPs; Farkas' lemma"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from _lib.orplot import new_axes, shade_polygon, clip_halfplane, mark_point, COLORS
+from _lib.toy_lp import A, b, c, vertices, solve
+
+sol = solve()
+xs, ys = sol["x"], sol["y"]
+
+def region(G, h, lo=-0.5, hi=8.5):
+    P = [(lo, lo), (hi, lo), (hi, hi), (lo, hi)]
+    for g, v in zip(G, h):
+        P = clip_halfplane(P, g, v)
+    return P
+```
+
+## The idea
+
+Go back to the workshop: 8 units of wood, 7 hours of labor, chairs earn 3 and tables
+earn 4. Now a buyer offers to purchase **all** your wood and labor. She proposes a price
+$y_1$ per unit of wood and $y_2$ per hour of labor. When would you accept?
+
+You would refuse if some product earns more than the resources it uses are worth at her
+prices: then you would rather build it yourself. So her prices must satisfy
+$$
+\begin{aligned}
+y_1 + 2y_2 &\ge 3 && \text{(a chair's wood and labor are worth at least its profit)}\\
+2y_1 + y_2 &\ge 4 && \text{(the same for a table)}\\
+y_1, y_2 &\ge 0 .
+\end{aligned}
+$$
+She wants to pay as little as possible in total, $8y_1 + 7y_2$. That is another LP: the
+**dual** of the workshop LP. Its optimum is $y^\star = (5/3,\ 2/3)$ with total payment
+$18$, **exactly** the best profit you could make yourself. That equality is not a
+coincidence; it is the strong duality theorem.
+
+```{python}
+#| label: fig-primal-dual
+#| fig-cap: "Left: the workshop LP (primal), maximize $3x_1 + 4x_2$; optimum $(2, 3)$ with value 18. Right: its dual, minimize $8y_1 + 7y_2$ over prices that make every product break even; the region is unbounded, and the optimum is the vertex $(5/3, 2/3)$, also with value 18. The dashed lines are the objective at value 18 in each problem."
+fig, axes = new_axes(2, xlim=(-0.3, 5.5), ylim=(-0.3, 5.5), size=4.0)
+ax = axes[0]
+shade_polygon(ax, vertices(), COLORS["p1"], alpha=0.25)
+t = np.array([-0.3, 5.5])
+ax.plot(t, (18 - 3 * t) / 4, color=COLORS["hull"], ls="--", lw=1.6)
+mark_point(ax, xs, COLORS["weak"])
+ax.annotate("$(2, 3)$", xs, xytext=(8, 4), textcoords="offset points")
+ax.set_title("Primal: max $3x_1 + 4x_2$", fontsize=11)
+ax = axes[1]
+D = region([(-1, -2), (-2, -1), (-1, 0), (0, -1)], [-3, -4, 0, 0], lo=-0.3, hi=5.5)
+shade_polygon(ax, D, COLORS["p2"], alpha=0.25)
+ax.plot(t, (18 - 8 * t) / 7, color=COLORS["hull"], ls="--", lw=1.6)
+for v in [(0, 4), (3, 0)]:
+    mark_point(ax, v, "black", size=30)
+mark_point(ax, ys, COLORS["weak"])
+ax.annotate("$(5/3, 2/3)$", ys, xytext=(8, 4), textcoords="offset points")
+ax.set_xlabel("$y_1$ (price of wood)"); ax.set_ylabel("$y_2$ (price of labor)")
+ax.set_title("Dual: min $8y_1 + 7y_2$", fontsize=11)
+fig.tight_layout()
+plt.show()
+```
+
+## The math
+
+### The primal–dual pair
+
+For an LP in the form
+$$
+\text{(P)}\qquad \max\ c^\top x \quad \text{s.t.}\quad Ax \le b,\ \ x \ge 0,
+$$
+the **dual** is
+$$
+\text{(D)}\qquad \min\ b^\top y \quad \text{s.t.}\quad A^\top y \ge c,\ \ y \ge 0 .
+$$
+One dual variable per primal constraint, one dual constraint per primal variable. The
+roles of $b$ and $c$ swap, and $A$ is transposed. The dual of the dual is the primal
+again.
+
+For other forms, the rules are:
+
+| Primal (max) | Dual (min) |
+|---|---|
+| constraint $a_i^\top x \le b_i$ | variable $y_i \ge 0$ |
+| constraint $a_i^\top x = b_i$ | variable $y_i$ free |
+| constraint $a_i^\top x \ge b_i$ | variable $y_i \le 0$ |
+| variable $x_j \ge 0$ | constraint $(A^\top y)_j \ge c_j$ |
+| variable $x_j$ free | constraint $(A^\top y)_j = c_j$ |
+
+### Weak and strong duality
+
+::: {.callout-important}
+## Theorem (weak duality)
+If $x$ is feasible for (P) and $y$ is feasible for (D), then $c^\top x \le b^\top y$.
+:::
+
+So any feasible dual solution gives an **upper bound** on the primal optimum, and any
+primal solution gives a lower bound on the dual. In the workshop, the prices $y = (3, 0)$
+are feasible for the buyer and show at once that profit can never exceed $24$.
+
+::: {.callout-important}
+## Theorem (strong duality)
+If (P) has an optimal solution, so does (D), and the optimal values are equal:
+$$
+\max\{c^\top x : Ax \le b,\ x \ge 0\} \;=\; \min\{b^\top y : A^\top y \ge c,\ y \ge 0\}.
+$$
+:::
+
+The duality theorem was first proved in print by @gale1951, using
+[Farkas' lemma](../../foundations/polyhedra/farkas-lemma.qmd) [@farkas1902]. Together
+with the [fundamental theorem](../modeling-and-geometry/geometry-of-lp.qmd), it leaves
+only these combinations:
+
+| | (D) optimal | (D) unbounded | (D) infeasible |
+|---|---|---|---|
+| **(P) optimal** | possible, equal values | impossible | impossible |
+| **(P) unbounded** | impossible | impossible | possible |
+| **(P) infeasible** | impossible | possible | possible |
+
+The practical meaning: **an optimal $x$ always comes with a proof of optimality**, a
+dual $y$ with the same objective value. Anyone can check it by verifying feasibility and
+comparing two numbers.
+
+### Complementary slackness
+
+::: {.callout-important}
+## Theorem (complementary slackness)
+Let $x$ be feasible for (P) and $y$ feasible for (D). They are both optimal if and only
+if
+$$
+y_i \,\big(b_i - a_i^\top x\big) = 0 \ \text{ for every } i
+\qquad\text{and}\qquad
+x_j \,\big((A^\top y)_j - c_j\big) = 0 \ \text{ for every } j .
+$$
+:::
+
+In words:
+
+- a resource that is **not used up** has price zero ($b_i - a_i^\top x > 0 \Rightarrow y_i = 0$);
+- a product that **loses money** at the dual prices is not made
+  ($(A^\top y)_j > c_j \Rightarrow x_j = 0$).
+
+In the workshop both resources are used up and both products are made, so all four
+conditions hold with equality, and $x^\star$, $y^\star$ can be found by solving two small
+linear systems. Complementary slackness is also how an LP solver turns a primal solution
+into dual values.
+
+### The geometry: the objective lies in a cone
+
+At the optimal vertex, the objective vector $c$ is a nonnegative combination of the
+normals of the tight constraints, and the coefficients are exactly the dual prices.
+
+```{python}
+#| label: fig-optimality-cone
+#| fig-cap: "Optimality at the vertex $x^\\star = (2, 3)$. The normals of the two tight constraints, $a_1 = (1, 2)$ (wood) and $a_2 = (2, 1)$ (labor), span a cone (blue). The objective $c = (3, 4)$ (green) lies inside it: $c = \\tfrac53 a_1 + \\tfrac23 a_2$ (dashed parallelogram). The coefficients are the dual prices $y^\\star$. If $c$ were outside the cone, some direction along the boundary would improve the objective."
+fig, ax = new_axes(1, xlim=(-0.5, 8.5), ylim=(-0.5, 8.5), size=4.6)
+shade_polygon(ax, vertices(), "#888888", alpha=0.18, lw=1.4)
+o = xs
+cone = region([(-2, 1), (1, -2)], [-2 * o[0] + o[1], o[0] - 2 * o[1]])
+shade_polygon(ax, cone, COLORS["p1"], alpha=0.15, lw=0.8)
+arrow = lambda v, col, lw=1.8: ax.annotate(
+    "", xy=o + v, xytext=o, arrowprops=dict(arrowstyle="->", color=col, lw=lw))
+p1, p2 = ys[0] * A[0], ys[1] * A[1]
+arrow(A[0], "black"); arrow(A[1], "black")
+ax.plot(*np.array([o + p1, o + c, o + p2]).T, color=COLORS["hull"], ls="--", lw=1.2)
+arrow(c, COLORS["hull"], 2.4)
+ax.annotate("$a_1$ (wood)", o + A[0], xytext=(-62, 2), textcoords="offset points")
+ax.annotate("$a_2$ (labor)", o + A[1], xytext=(4, -12), textcoords="offset points")
+ax.annotate("$c$", o + c, xytext=(4, 2), textcoords="offset points", color=COLORS["hull"])
+mark_point(ax, o, COLORS["weak"])
+plt.show()
+```
+
+This is [Farkas' lemma](../../foundations/polyhedra/farkas-lemma.qmd) at work: either
+$c$ is in the cone (and the dual multipliers exist), or a separating direction exists,
+and that direction is an improving move for the primal.
+
+## Why it works
+
+::: {.callout-tip collapse="true"}
+## Proof sketch: weak duality and complementary slackness
+For feasible $x$ and $y$,
+$$
+c^\top x \;\le\; (A^\top y)^\top x \;=\; y^\top (Ax) \;\le\; y^\top b .
+$$
+The first inequality uses $x \ge 0$ and $A^\top y \ge c$; the second uses $y \ge 0$ and
+$Ax \le b$. That is weak duality.
+
+The gap $b^\top y - c^\top x$ is the sum of the two slacks
+$\sum_j x_j\big((A^\top y)_j - c_j\big) + \sum_i y_i\big(b_i - a_i^\top x\big)$, a sum
+of nonnegative terms. It is zero, which by strong duality is exactly optimality, if and
+only if every term is zero. That is complementary slackness.
+:::
+
+::: {.callout-tip collapse="true"}
+## Proof sketch: strong duality
+Suppose (P) has optimal value $z^\star$. For any $\varepsilon > 0$, the system
+"$Ax \le b$, $x \ge 0$, $c^\top x \ge z^\star + \varepsilon$" has no solution. Farkas'
+lemma turns that infeasibility into multipliers $y \ge 0$ with $A^\top y \ge c$ and
+$b^\top y < z^\star + \varepsilon$. Combined with weak duality, the dual optimum is
+squeezed to $z^\star$. The details are written out on the
+[Farkas' Lemma](../../foundations/polyhedra/farkas-lemma.qmd) page.
+:::
+
+## In practice
+
+- **Solvers report dual values** (also called shadow prices or marginals) along with the
+  solution. They are the subject of [Sensitivity Analysis](sensitivity-analysis.qmd).
+- **The duality gap is a stopping rule.** Interior-point methods track primal and dual
+  solutions together and stop when $b^\top y - c^\top x$ is tiny.
+- **Decomposition runs on duals.** In
+  [Benders decomposition](../../decomposition-methods/benders-decomposition/theory-and-mechanism.qmd)
+  the cuts come from dual solutions of the subproblem; in
+  [Dantzig–Wolfe](../../decomposition-methods/dantzig-wolfe/theory-and-mechanism.qmd)
+  the master's dual prices tell the subproblems which columns to generate.
+
+## Further reading
+
+- @vanderbei2020, Chapter 5.
+- @gale1951 for the original statement and proof.
+- Previous: [The Geometry of an LP](../modeling-and-geometry/geometry-of-lp.qmd). Next:
+  [Sensitivity Analysis](sensitivity-analysis.qmd).
