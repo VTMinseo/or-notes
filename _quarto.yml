@@ -49,3 +49,4 @@ format:
     code-fold: true             # if a page sets echo: true, code starts folded
     code-summary: "Show the code for this figure"
     callout-appearance: simple
+    include-in-header: _lib/analytics.html   # GoatCounter visitor counts
