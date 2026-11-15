@@ -21,6 +21,24 @@ listing:
     fields: [title, description, categories]
 ---
 
+An **integer program** (IP) is a linear program in which some or all variables must take
+integer values. That one change lets a model express yes/no decisions, on/off logic,
+fixed costs and choices among alternatives, and it makes the problem much harder:
+0–1 integer programming is among the problems @karp1972 showed to be NP-complete.
+
+The pages in the first two subcategories share one small example, so the numbers carry
+over from page to page:
+$$
+\max\ 2x_1 + 7x_2 \quad\text{s.t.}\quad -5x_1 + 5x_2 \le 14,\quad 7x_1 + 6x_2 \le 36,\quad
+0 \le x_1 \le 5,\ 0 \le x_2 \le 6,\ x \in \mathbb{Z}^2 .
+$$
+Its LP relaxation has optimum $(1.48, 4.28)$ with value $32.9$; the integer optimum is
+$(2, 3)$ with value $25$.
+
+Prerequisites: [Linear Programming](../linear-programming/index.qmd), and
+[Total Unimodularity](../network-optimization/integrality-and-matching/total-unimodularity.qmd)
+for when integrality comes for free.
+
 ## Subcategories
 
 ::: {#subcats}

@@ -1,0 +1,22 @@
+---
+kind: subcategory
+title: "Modeling and Formulations"
+description: "How to express decisions with integer and binary variables, and why some formulations are much better than others."
+order: 1
+toc: false
+listing:
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "order"
+    fields: [title, description, categories]
+---
+
+Binary variables turn logic into linear constraints. But the same problem can be written in many ways, and the choice decides how fast a solver can solve it.
+
+## Topics
+
+::: {#topics}
+:::

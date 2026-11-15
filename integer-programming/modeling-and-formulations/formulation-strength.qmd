@@ -1,0 +1,206 @@
+---
+kind: topic
+title: "LP Relaxations and Formulation Strength"
+description: "The LP relaxation, the integer hull, why it is the ideal formulation, and how two correct models of the same problem can give very different bounds."
+categories: [integer-programming, polyhedra, modelling]
+order: 2
+level: intro
+prerequisites: "Modeling with binary variables; polyhedra and vertices"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from _lib.orplot import new_axes, shade_polygon, convex_hull, mark_point, COLORS
+from _lib.toy_ip import A, b, c, lp, ip_optimum, integer_points, all_rows, polygon, facility_location
+```
+
+## The idea
+
+Drop the integrality requirement from an integer program and you get a linear program,
+its **LP relaxation**. The relaxation is easy to solve and, for a maximization problem,
+its value is an **upper bound** on the integer optimum, because it optimizes over a
+larger set.
+
+The relaxation depends on how the problem was written down. Many different systems of
+inequalities have exactly the same integer solutions, but their LP relaxations differ.
+The tighter the relaxation hugs the integer points, the better the bound, and the less
+work a solver needs. A good formulation is one whose relaxation is small.
+
+## The running example
+
+$$
+\max\ 2x_1 + 7x_2 \quad\text{s.t.}\quad -5x_1 + 5x_2 \le 14,\quad 7x_1 + 6x_2 \le 36,\quad
+0 \le x_1 \le 5,\ 0 \le x_2 \le 6,\quad x \in \mathbb{Z}^2 .
+$$
+
+```{python}
+#| label: fig-relaxation
+#| fig-cap: "The running example. The LP relaxation (red) contains the 17 integer points (dots); its optimum (red star) is $(1.48, 4.28)$ with value $32.9$. The integer hull (green) is the convex hull of the integer points; its best vertex is the integer optimum $(2, 3)$ with value $25$ (green star). Rounding the LP optimum gives $(1, 4)$, which is not even feasible."
+G, h = all_rows()
+P_lp = polygon(G, h)
+pts = integer_points()
+hull = convex_hull(pts)
+xlp, zlp = lp()
+xip, zip_ = ip_optimum()
+fig, ax = new_axes(1, xlim=(-0.4, 5.6), ylim=(-0.4, 5.4), size=4.6)
+shade_polygon(ax, P_lp, COLORS["weak"], alpha=0.18, label="LP relaxation $P$")
+shade_polygon(ax, hull, COLORS["hull"], alpha=0.40, label="integer hull conv$(S)$")
+ax.scatter(pts[:, 0], pts[:, 1], s=22, color="black", zorder=4)
+mark_point(ax, xlp, COLORS["weak"], marker="*", size=220, label=f"LP optimum, $z = {zlp:.1f}$")
+mark_point(ax, xip, COLORS["hull"], marker="*", size=220, label=f"IP optimum, $z = {zip_:.0f}$")
+ax.scatter([1], [4], s=70, marker="x", color=COLORS["weak"], zorder=5)
+ax.annotate("rounded:\ninfeasible", (1, 4), (0.05, 4.75), fontsize=8.5, color=COLORS["weak"])
+# objective direction
+d = c / np.linalg.norm(c)
+ax.annotate("", xy=(4.3 + 0.8 * d[0], 2.6 + 0.8 * d[1]), xytext=(4.3, 2.6),
+            arrowprops=dict(arrowstyle="->", lw=1.6, color="0.3"))
+ax.text(4.3, 2.5, "objective", fontsize=8.5, color="0.3", va="top", ha="center")
+ax.legend(loc="upper right", fontsize=8)
+plt.show()
+```
+
+The gap between $32.9$ and $25$ is the **integrality gap** of this formulation. Closing
+it is what every IP algorithm does, by branching, by cutting, or both.
+
+## The math
+
+Write the integer program as $\max\{c^\top x : x \in S\}$ with
+$$
+S = P \cap \mathbb{Z}^n, \qquad P = \{x \in \mathbb{R}^n : Ax \le b\}.
+$$
+A polyhedron $P$ with $P \cap \mathbb{Z}^n = S$ is called a **formulation** of $S$.
+
+### The integer hull
+
+::: {.callout-important}
+## Theorem (the integer hull is a polyhedron)
+If $A$ and $b$ are rational, then $\operatorname{conv}(S)$, the convex hull of the
+integer points of $P$, is a polyhedron. Moreover
+$$
+\max\{c^\top x : x \in S\} \;=\; \max\{c^\top x : x \in \operatorname{conv}(S)\}
+$$
+for every $c$, and when the maximum is finite it is attained at a vertex of
+$\operatorname{conv}(S)$, which is an integer point.
+:::
+
+The polyhedrality statement for general rational data is due to @meyer1974; for a
+bounded $P$ it is immediate, since $S$ is finite and the convex hull of finitely many
+points is a polytope ([Minkowski–Weyl](../../foundations/polyhedra/minkowski-weyl.qmd)).
+The equality holds because a linear function attains the same maximum over a set and
+over its convex hull.
+
+So **every integer program is secretly a linear program** over $\operatorname{conv}(S)$.
+The catch is that we usually do not know the inequalities describing
+$\operatorname{conv}(S)$, and there may be exponentially many of them.
+
+::: {.callout-note collapse="true"}
+## Why rationality matters
+With irrational data the integer hull need not be a polyhedron. For
+$P = \{x \in \mathbb{R}^2_{\ge 0} : x_2 \le \sqrt{2}\, x_1\}$ the integer points come
+arbitrarily close to the irrational line, and their convex hull needs infinitely many
+inequalities. In practice all data are rational, so this is a theoretical caveat.
+:::
+
+### Comparing formulations
+
+For two formulations $P_1, P_2$ of the same $S$, say $P_1$ is **stronger** (tighter) if
+$P_1 \subseteq P_2$. Then
+$$
+z_{\text{IP}} \;\le\; z_{\text{LP}}(P_1) \;\le\; z_{\text{LP}}(P_2)
+\qquad\text{for every objective } c,
+$$
+so the stronger formulation always gives a bound at least as good. The strongest
+possible formulation is $\operatorname{conv}(S)$ itself, the **ideal formulation**: its
+vertices are integer, so solving the LP relaxation solves the integer program.
+
+```{python}
+#| label: fig-nested
+#| fig-cap: "Three formulations of the same 17 integer points. Left: the original model. Middle: add the valid inequality $x_2 \\le 3$ (it cuts off no integer point). Right: the ideal formulation, described by $x_1 + x_2 \\le 5$, $-x_1 + x_2 \\le 2$, $x_2 \\le 3$ and $x \\ge 0$. Each is contained in the previous one, and the LP bound falls from 32.9 to 26.1 to the integer optimum 25."
+extra2 = [(np.array([0.0, 1.0]), 3.0)]
+G2 = np.vstack([G, extra2[0][0]]); h2 = np.append(h, 3.0)
+forms = [("original $P$", polygon(G, h), lp()),
+         ("$P \\cap \\{x_2 \\leq 3\\}$", polygon(G2, h2), lp(extra=extra2)),
+         ("ideal: conv$(S)$", hull, (xip, zip_))]
+cols = [COLORS["weak"], COLORS["p2"], COLORS["hull"]]
+fig, axes = new_axes(3, xlim=(-0.4, 5.6), ylim=(-0.4, 5.4), size=3.3)
+for ax, (name, poly, (xs, zs)), col in zip(axes, forms, cols):
+    shade_polygon(ax, P_lp, "#888888", alpha=0.08, lw=0.6)
+    shade_polygon(ax, poly, col, alpha=0.35)
+    ax.scatter(pts[:, 0], pts[:, 1], s=14, color="black", zorder=4)
+    mark_point(ax, xs, col, marker="*", size=170)
+    ax.set_title(f"{name}\nLP bound {zs:.1f}", fontsize=10)
+plt.tight_layout(); plt.show()
+```
+
+### When the relaxation is automatically ideal
+
+If the constraint matrix $A$ is
+[totally unimodular](../../network-optimization/integrality-and-matching/total-unimodularity.qmd)
+and $b$ is integer, every vertex of $P$ is integer, so $P = \operatorname{conv}(S)$
+[@hoffman1956]. That is why network flow, bipartite matching and assignment problems
+never need branching. For a general IP, an ideal formulation can sometimes be built by
+adding variables: a description of $\operatorname{conv}(S)$ in a higher-dimensional
+space whose projection is the hull. The convex-hull formulation of a disjunction
+[@balas1979] is the standard example; see
+[Big-M vs. Convex Hull](../disjunctive-programming/big-m-vs-hull.qmd).
+
+## A classic example: facility location
+
+Choose which of $m$ sites to open ($y_i \in \{0,1\}$, fixed cost $f_i$) and assign each
+of $n$ customers to an open site ($x_{ij} \ge 0$, cost $c_{ij}$, $\sum_i x_{ij} = 1$).
+A customer may only use an open site. Two correct ways to say this:
+$$
+\text{aggregated:}\quad \sum_{j=1}^n x_{ij} \le n\, y_i \quad (m \text{ constraints}),
+\qquad\qquad
+\text{disaggregated:}\quad x_{ij} \le y_i \quad (mn \text{ constraints}).
+$$
+Both have the same integer solutions. But summing the disaggregated constraints over
+$j$ gives the aggregated one, so the disaggregated formulation is stronger. In the
+aggregated LP relaxation, a site can be "a quarter open" ($y_i = 1/4$) and still serve
+two customers fully, paying only a quarter of its fixed cost.
+
+```{python}
+#| label: fig-facility
+#| fig-cap: "Facility location with 4 candidate sites (squares, fixed costs 25–35) and 8 customers (dots). Left: the aggregated LP relaxation opens every site fractionally (labels show $y_i$) and its bound is about 24% below the true optimum. Right: the disaggregated LP relaxation is already integer: it opens one site, and its bound equals the integer optimum."
+res = {k: facility_location(k) for k in (False, True)}
+zopt = facility_location(True, integer=True)[0]
+fig, axes = plt.subplots(1, 2, figsize=(8.4, 4.0))
+for ax, k, title in [(axes[0], False, "aggregated"), (axes[1], True, "disaggregated")]:
+    z, y, F, C, X = res[k]
+    for i in range(len(F)):
+        for j in range(len(C)):
+            if X[i, j] > 1e-6:
+                ax.plot([F[i, 0], C[j, 0]], [F[i, 1], C[j, 1]], color="0.55",
+                        lw=0.6 + 2.2 * X[i, j], zorder=1)
+    ax.scatter(C[:, 0], C[:, 1], s=26, color="black", zorder=3)
+    for i, (px, py) in enumerate(F):
+        col = COLORS["hull"] if y[i] > 0.999 else (COLORS["weak"] if y[i] > 1e-6 else "0.75")
+        ax.scatter([px], [py], marker="s", s=110, color=col, edgecolor="white", zorder=4)
+        ax.text(px + 0.45, py - 0.35, f"$y={round(abs(y[i]), 3):g}$", ha="left", va="top", fontsize=8.5,
+                bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.85), zorder=5)
+    ax.set_title(f"{title}: LP bound {z:.1f}  (optimum {zopt:.1f})", fontsize=10)
+    ax.set_xlim(-0.5, 10.5); ax.set_ylim(-0.5, 10.8); ax.set_aspect("equal")
+    ax.set_xticks([]); ax.set_yticks([])
+plt.tight_layout(); plt.show()
+```
+
+The stronger model has more constraints but gives a far better bound, and on large
+instances it is usually solved much faster. "Fewer constraints" is not a goal; a small
+relaxation is.
+
+## Why it works
+
+Every IP method in the next section works with relaxations:
+[branch and bound](../solution-methods/branch-and-bound.qmd) prunes a subproblem when
+its relaxation bound cannot beat the best known solution, so better bounds mean more
+pruning; [cutting planes](../solution-methods/cutting-planes.qmd) move the formulation
+toward $\operatorname{conv}(S)$ while the algorithm runs. A strong formulation gives
+both a head start.
+
+## Further reading
+
+- @conforti2014 for formulations, the integer hull and ideal formulations.
+- @meyer1974 for the existence of optimal solutions and polyhedrality of the integer hull.
+- Next: [Branch and Bound](../solution-methods/branch-and-bound.qmd).

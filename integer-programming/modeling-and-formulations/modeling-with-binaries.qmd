@@ -1,0 +1,152 @@
+---
+kind: topic
+title: "Modeling with Binary Variables"
+description: "Yes/no decisions, logical conditions, fixed costs and either–or constraints as linear constraints on 0–1 variables, and which sets integer programs can describe."
+categories: [integer-programming, modelling]
+order: 1
+level: intro
+prerequisites: "Formulating linear programs"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from _lib.orplot import new_axes, shade_polygon, mark_point, COLORS
+```
+
+## The idea
+
+A linear program can say "make 3.7 tables." It cannot say "either build the factory or
+don't," "if we open warehouse A we must also open B," or "pay a setup cost only if we
+produce anything." All of these become linear once we add **binary variables**,
+$y \in \{0, 1\}$, that switch decisions on and off.
+
+**Example (project selection).** Five projects cost $3, 4, 2, 5, 3$ and return
+$6, 7, 3, 9, 4$. With a budget of $10$, which projects should we fund? Let $y_j = 1$ if
+project $j$ is funded:
+$$
+\max\ 6y_1 + 7y_2 + 3y_3 + 9y_4 + 4y_5
+\quad\text{s.t.}\quad 3y_1 + 4y_2 + 2y_3 + 5y_4 + 3y_5 \le 10,\qquad y \in \{0,1\}^5 .
+$$
+This is the **knapsack problem**. Its LP relaxation ($0 \le y_j \le 1$) happily funds
+"half a project"; the integer program does not.
+
+## The math: a modeling toolbox
+
+### Logical conditions
+
+With binary variables $y_1, y_2, \dots$ meaning "decision $j$ is taken":
+
+| Condition | Linear constraint |
+|---|---|
+| at most $k$ of the decisions | $\sum_j y_j \le k$ |
+| exactly one of them | $\sum_j y_j = 1$ |
+| if $y_1$ then $y_2$ ($y_1 \Rightarrow y_2$) | $y_1 \le y_2$ |
+| $y_1$ and $y_2$ cannot both be taken | $y_1 + y_2 \le 1$ |
+| $z = y_1 \text{ AND } y_2$ | $z \le y_1,\ z \le y_2,\ z \ge y_1 + y_2 - 1$ |
+| $z = y_1 \text{ OR } y_2$ | $z \ge y_1,\ z \ge y_2,\ z \le y_1 + y_2$ |
+
+Each row is exact for 0–1 values. The AND row is also how a **product of two binaries**
+is linearized.
+
+### Linking a continuous variable to a switch: fixed costs
+
+A machine produces $x \ge 0$ units at cost $c$ per unit, but running it at all costs a
+setup fee $f$. The cost $f \cdot [x > 0] + c\,x$ jumps at zero, which no LP can model.
+With $y = 1$ meaning "the machine runs" and an upper bound $M$ on production:
+$$
+\text{cost} = f\,y + c\,x, \qquad 0 \le x \le M y, \qquad y \in \{0, 1\}.
+$$
+If $y = 0$ the machine produces nothing; if $y = 1$ it may produce up to $M$ and pays $f$.
+
+The choice of $M$ matters. Any valid bound works for the integer program, but in the LP
+relaxation $y$ can be fractional, and the cheapest choice is $y = x/M$. The relaxation
+then charges only $(f/M + c)\,x$: the setup cost is spread thinly over a large $M$.
+
+```{python}
+#| label: fig-fixed-charge
+#| fig-cap: "Fixed-charge cost with setup fee $f = 20$ and unit cost $c = 1$ (blue: zero at $x = 0$, then a jump). The LP relaxation of the model $x \\le My$ replaces it by the line $(f/M + c)\\,x$. With a loose bound $M = 40$ (red) the relaxation badly underestimates the cost; with the tightest valid bound $M = 10$ (green) it is much closer. That is why big-M values should be as small as possible."
+f, cu = 20.0, 1.0
+fig, ax = plt.subplots(figsize=(5.6, 3.6))
+xs = np.linspace(0, 10, 200)
+ax.plot([0], [0], "o", color=COLORS["p1"], ms=8, zorder=6, clip_on=False)
+ax.plot(xs[1:], f + cu * xs[1:], color=COLORS["p1"], lw=2.4, label="true cost $f\\,[x>0] + c\\,x$")
+ax.plot([0], [f], "o", mfc="white", mec=COLORS["p1"], ms=6, zorder=5)
+for M, col in [(40, COLORS["weak"]), (10, COLORS["hull"])]:
+    ax.plot(xs, (f / M + cu) * xs, color=col, lw=1.8, ls="--",
+            label=f"LP relaxation, $M = {M}$")
+ax.set_xlabel("production $x$"); ax.set_ylabel("cost")
+ax.set_xlim(0, 10.2); ax.set_ylim(0, 33)
+ax.legend(loc="upper left", fontsize=9)
+plt.show()
+```
+
+### Either–or constraints
+
+"At least one of two constraints must hold" describes a **union** of two regions, which is
+usually not convex. With a binary $y$ choosing which constraint is enforced and big
+constants $M_1, M_2$ large enough to switch a constraint off:
+$$
+a^\top x \le \alpha + M_1 y, \qquad d^\top x \le \delta + M_2 (1 - y), \qquad y \in \{0,1\}.
+$$
+This is the **big-M** formulation of a disjunction. It is valid but often weak; the
+[convex-hull formulation](../disjunctive-programming/big-m-vs-hull.qmd) is the strongest
+alternative, and the whole topic is developed in
+[Disjunctive Programming](../disjunctive-programming/introduction.qmd).
+
+```{python}
+#| label: fig-either-or
+#| fig-cap: "Either–or: the feasible set is the union of two boxes (blue and orange), which is not convex. A binary variable selects which box's constraints are enforced. The LP relaxation of the big-M model contains the much larger grey region, including points (red) that belong to neither box."
+fig, ax = new_axes(1, xlim=(-0.3, 6.3), ylim=(-0.3, 6.6), size=4.2)
+B1 = [(0.5, 0.5), (2.5, 0.5), (2.5, 4.5), (0.5, 4.5)]
+B2 = [(3.5, 0.5), (5.5, 0.5), (5.5, 2.0), (3.5, 2.0)]
+shade_polygon(ax, [(0.5, 0.5), (5.5, 0.5), (5.5, 4.5), (0.5, 4.5)], "#888888", alpha=0.15,
+              lw=1.0, label="LP relaxation (big-M)")
+shade_polygon(ax, B1, COLORS["p1"], alpha=0.35, label="$y = 0$")
+shade_polygon(ax, B2, COLORS["p2"], alpha=0.35, label="$y = 1$")
+mark_point(ax, (4.5, 3.6), COLORS["weak"])
+ax.legend(loc="upper left", fontsize=8, ncol=2)
+plt.show()
+```
+
+### Other common patterns
+
+- **General integers** count indivisible things: trucks, workers, batches.
+- **Semicontinuous variables**: $x = 0$ or $\ell \le x \le u$, modeled as
+  $\ell y \le x \le u y$.
+- **Choosing one value from a list** $\{v_1, \dots, v_k\}$: $x = \sum_i v_i y_i$ with
+  $\sum_i y_i = 1$.
+- **Piecewise-linear functions** that are not convex (economies of scale, quantity
+  discounts) need binaries to select the active piece; convex ones do not (see
+  [Formulating LPs](../../linear-programming/modeling-and-geometry/formulating-lps.qmd)).
+
+### What can integer programs describe?
+
+::: {.callout-important}
+## Theorem (representability)
+A set $S \subseteq \mathbb{R}^n$ is the projection onto $x$ of the feasible set of a
+mixed-integer linear model with **bounded** integer variables if and only if $S$ is a
+union of finitely many polyhedra that all have the same recession cone.
+:::
+
+The result is due to @jeroslow1984. It says exactly what the toolbox above can and
+cannot do: unions of polyhedra (logic, either–or, fixed costs) are fine, but a smooth
+curved set, or a union of regions that go off to infinity in different directions, is
+out of reach.
+
+## In practice
+
+- **Use the smallest valid big-M.** Large values weaken the relaxation (as the figure
+  shows) and cause numerical trouble. Derive $M$ from bounds on the variables involved.
+- **Solvers offer shortcuts.** Many accept "indicator constraints" ($y = 1 \Rightarrow
+  a^\top x \le \alpha$) directly and choose the reformulation themselves.
+- **The same problem has many models.** They all have the same integer solutions but
+  different LP relaxations, and that difference is often the difference between seconds
+  and days. That is the subject of [Formulation Strength](formulation-strength.qmd).
+
+## Further reading
+
+- @conforti2014 for many more modeling examples.
+- @jeroslow1984 for representability.
+- Next: [Formulation Strength](formulation-strength.qmd).

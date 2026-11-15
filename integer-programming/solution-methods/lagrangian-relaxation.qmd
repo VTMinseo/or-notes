@@ -1,0 +1,344 @@
+---
+kind: topic
+title: "Lagrangian Relaxation"
+description: "Move hard constraints into the objective with a price, get an easier problem and a bound; Geoffrion's theorem says exactly how good that bound is."
+categories: [integer-programming, duality, decomposition]
+order: 3
+level: intermediate
+prerequisites: "LP duality; LP relaxations and formulation strength"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from _lib.orplot import new_axes, shade_polygon, convex_hull, mark_point, COLORS
+from _lib.toy_ip import (A, b, c, RELAX, lp, integer_points, all_rows, polygon, ip_optimum,
+                         lagrangian_value, lagrangian_dual, lagrangian_pieces, lagrangian_set,
+                         subgradient)
+
+G, h = all_rows()
+P_lp = polygon(G, h)
+X, icpt, slope = lagrangian_pieces()
+lams = np.linspace(0, 1.5, 601)
+Lvals = np.array([lagrangian_value(l)[0] for l in lams])
+_, _, lam_star, L_star = lagrangian_dual(np.linspace(0, 2, 20001))
+x_lp, z_lp = lp()
+x_ip, z_ip = ip_optimum()
+convX = convex_hull(X)
+aR, bR = A[RELAX], b[RELAX]
+```
+
+## The idea
+
+Some integer programs would be easy if a few "complicating" constraints were removed.
+Lagrangian relaxation removes them, but not for free: each removed constraint
+$a^\top x \le \beta$ goes into the objective with a price $\lambda \ge 0$,
+$$
+\max\ c^\top x + \lambda\,(\beta - a^\top x).
+$$
+Violating the constraint now costs $\lambda$ per unit; satisfying it with slack earns
+$\lambda$ per unit. For every price, the optimal value of this easier problem is an
+upper bound on the integer optimum. Searching for the price that gives the **smallest**
+bound is the Lagrangian dual.
+
+The method was made famous by Held and Karp [@held1970; @held1971], who removed the degree constraints
+of the travelling-salesman problem, leaving minimum spanning-tree problems, and
+obtained bounds strong enough to solve instances far beyond the reach of other methods.
+@geoffrion1974 named the approach and established its theory, and @fisher1981 gave the
+standard tutorial account.
+
+## The math
+
+Split the constraints of an integer program into easy and complicating ones:
+$$
+z_{\text{IP}} = \max\{c^\top x : Ax \le b,\ x \in X\},
+\qquad X = \{x \in \mathbb{Z}^n : Dx \le d\},
+$$
+where optimizing over $X$ alone is easy. For $\lambda \ge 0$ define the **Lagrangian
+function**
+$$
+L(\lambda) = \max_{x \in X}\ c^\top x + \lambda^\top (b - Ax).
+$$
+
+::: {.callout-important}
+## Weak duality
+For every $\lambda \ge 0$, $L(\lambda) \ge z_{\text{IP}}$. The best such bound is the
+**Lagrangian dual**
+$$
+z_{\text{LD}} = \min_{\lambda \ge 0} L(\lambda) \;\ge\; z_{\text{IP}}.
+$$
+:::
+
+*Why:* if $x$ is feasible for the IP, then $x \in X$ and $b - Ax \ge 0$, so
+$c^\top x \le c^\top x + \lambda^\top (b - Ax) \le L(\lambda)$.
+
+$L$ is a maximum of linear functions of $\lambda$, one for each $x \in X$, so it is
+**convex and piecewise linear**. Minimizing it is a convex problem, even though the IP is
+not.
+
+### On the running example
+
+Relax the second constraint, $7x_1 + 6x_2 \le 36$, and keep
+$X = \{x \in \mathbb{Z}^2 : -5x_1 + 5x_2 \le 14,\ 0 \le x_1 \le 5,\ 0 \le x_2 \le 6\}$
+(32 points). Then
+$$
+L(\lambda) = \max_{x \in X}\ 2x_1 + 7x_2 + \lambda\,(36 - 7x_1 - 6x_2).
+$$
+
+```{python}
+#| label: lag-ojs-data
+#| echo: false
+ojs_define(lagX=X.tolist(), lagIc=icpt.tolist(), lagSl=slope.tolist(),
+           lagCurve=[[float(l), float(v)] for l, v in zip(lams, Lvals)],
+           lagStar=[lam_star, L_star], lagLP=z_lp, lagIP=z_ip, lagA=aR.tolist(), lagB=float(bR),
+           lagC=c.tolist(), lagColors=COLORS)
+```
+
+::: {.callout-tip appearance="simple"}
+**Interactive.** Move the price $\lambda$. Left: the 32 points of $X$ (filled if they also
+satisfy the relaxed constraint, dashed line) and the maximizer of the Lagrangian
+objective (star); the arrow at the top left is the objective direction $c - \lambda a$. Right: $L(\lambda)$, the
+upper envelope of one line per point of $X$.
+:::
+
+```{ojs}
+//| echo: false
+viewof lam = Inputs.range([0, 1.5], {label: "Price λ", step: 0.01, value: 0})
+```
+
+```{ojs}
+//| echo: false
+//| column: page
+lagChart = {
+  const C = lagColors, W = 800, H = 380;
+  const vals = lagX.map((x, i) => lagIc[i] + lam * lagSl[i]);
+  const k = d3.maxIndex(vals), xs = lagX[k], Lv = vals[k];
+  const svg = d3.create("svg").attr("viewBox", [0, 0, W, H])
+      .style("width", "100%").style("max-width", "960px")
+      .style("font-family", "inherit").style("font-size", "16px");
+  // left: points of X
+  const x = d3.scaleLinear([-0.5, 5.5], [40, 350]), y = d3.scaleLinear([-0.5, 6.5], [340, 30]);
+  const g = svg.append("g");
+  for (let t = 0; t <= 6; t++) {
+    if (t <= 5) g.append("text").attr("x", x(t)).attr("y", 362).attr("text-anchor", "middle")
+      .attr("fill", "currentColor").attr("font-size", 14).text(t);
+    g.append("text").attr("x", 24).attr("y", y(t) + 5).attr("text-anchor", "middle")
+      .attr("fill", "currentColor").attr("font-size", 14).text(t);
+  }
+  g.append("line").attr("x1", x(0)).attr("y1", y(lagB / lagA[1])).attr("x2", x(lagB / lagA[0])).attr("y2", y(0))
+    .attr("stroke", C.p1).attr("stroke-width", 2).attr("stroke-dasharray", "6 4");
+  g.append("text").attr("x", 195).attr("y", 40).attr("text-anchor", "middle").attr("fill", C.p1)
+    .attr("font-size", 13).text("dashed: relaxed constraint 7x₁ + 6x₂ ≤ 36");
+  for (const p of lagX) {
+    const ok = lagA[0] * p[0] + lagA[1] * p[1] <= lagB + 1e-9;
+    g.append("circle").attr("cx", x(p[0])).attr("cy", y(p[1])).attr("r", 4)
+      .style("fill", ok ? "currentColor" : "var(--bs-body-bg, white)").attr("stroke", "currentColor");
+  }
+  const d = [lagC[0] - lam * lagA[0], lagC[1] - lam * lagA[1]], n = Math.hypot(...d) || 1;
+  svg.append("defs").append("marker").attr("id", "lag-arr").attr("viewBox", "0 0 10 10")
+    .attr("refX", 9).attr("refY", 5).attr("markerWidth", 6).attr("markerHeight", 6).attr("orient", "auto")
+    .append("path").attr("d", "M0,0L10,5L0,10z").attr("fill", C.p2);
+  const o = [0.7, 4.1];
+  g.append("circle").attr("cx", x(o[0])).attr("cy", y(o[1])).attr("r", 3).attr("fill", C.p2);
+  g.append("line").attr("x1", x(o[0])).attr("y1", y(o[1]))
+    .attr("x2", x(o[0] + 0.6 * d[0] / n)).attr("y2", y(o[1] + 0.6 * d[1] / n))
+    .attr("stroke", C.p2).attr("stroke-width", 2.5).attr("marker-end", "url(#lag-arr)");
+  g.append("text").attr("x", x(o[0])).attr("y", y(o[1]) + 24).attr("text-anchor", "middle")
+    .attr("font-size", 13).attr("fill", C.p2).text("c − λa");
+  g.append("path").attr("d", d3.symbol(d3.symbolStar, 260)).attr("transform", `translate(${x(xs[0])},${y(xs[1])})`)
+    .attr("fill", C.p2).attr("stroke", "white");
+  g.append("text").attr("x", 195).attr("y", 18).attr("text-anchor", "middle").attr("font-weight", 600)
+    .attr("fill", "currentColor").text("the set X");
+  // right: L(lambda)
+  const u = d3.scaleLinear([0, 1.5], [450, 780]), v = d3.scaleLinear([20, 56], [340, 30]);
+  const r = svg.append("g");
+  r.append("text").attr("x", 615).attr("y", 18).attr("text-anchor", "middle").attr("font-weight", 600)
+    .attr("fill", "currentColor").text("Lagrangian function L(λ)");
+  for (const t of [0, 0.5, 1, 1.5]) r.append("text").attr("x", u(t)).attr("y", 362)
+    .attr("text-anchor", "middle").attr("font-size", 14).attr("fill", "currentColor").text(t);
+  for (const t of [20, 30, 40, 50]) r.append("text").attr("x", 436).attr("y", v(t) + 5)
+    .attr("text-anchor", "end").attr("font-size", 14).attr("fill", "currentColor").text(t);
+  r.append("text").attr("x", 780).attr("y", 380).attr("text-anchor", "end").attr("font-size", 14)
+    .attr("fill", "currentColor").text("λ");
+  const clip = svg.append("clipPath").attr("id", "lag-clip").append("rect")
+    .attr("x", 450).attr("y", 30).attr("width", 330).attr("height", 310);
+  const lines = r.append("g").attr("clip-path", "url(#lag-clip)");
+  lagX.forEach((p, i) => lines.append("line").attr("x1", u(0)).attr("y1", v(lagIc[i]))
+    .attr("x2", u(1.5)).attr("y2", v(lagIc[i] + 1.5 * lagSl[i]))
+    .attr("stroke", i === k ? C.p2 : "currentColor").attr("stroke-opacity", i === k ? 0.9 : 0.12)
+    .attr("stroke-width", i === k ? 2 : 1));
+  for (const [val, col, lab] of [[lagLP, C.weak, "LP relaxation"], [lagIP, C.hull, "integer optimum"]]) {
+    lines.append("line").attr("x1", u(0)).attr("x2", u(1.5)).attr("y1", v(val)).attr("y2", v(val))
+      .attr("stroke", col).attr("stroke-dasharray", "5 4").attr("stroke-width", 1.6);
+    r.append("text").attr("x", u(1.5) - 4).attr("y", v(val) - 6).attr("text-anchor", "end")
+      .attr("font-size", 13).attr("fill", col).text(`${lab} ${val.toFixed(1)}`);
+  }
+  lines.append("path").attr("d", d3.line(p => u(p[0]), p => v(p[1]))(lagCurve))
+    .attr("fill", "none").attr("stroke", C.p1).attr("stroke-width", 3);
+  r.append("circle").attr("cx", u(lagStar[0])).attr("cy", v(lagStar[1])).attr("r", 5).attr("fill", C.p1);
+  r.append("circle").attr("cx", u(lam)).attr("cy", v(Lv)).attr("r", 7).attr("fill", C.p2).attr("stroke", "white");
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+lagText = {
+  const vals = lagX.map((x, i) => lagIc[i] + lam * lagSl[i]);
+  const k = d3.maxIndex(vals), xs = lagX[k], slack = lagB - lagA[0] * xs[0] - lagA[1] * xs[1];
+  const box = document.createElement("div"); box.style.minHeight = "4em";
+  const status = slack < 0
+    ? `It violates the relaxed constraint by ${-slack}, so a higher price would help: L decreases as λ grows.`
+    : slack > 0 ? `It satisfies the relaxed constraint with slack ${slack}, so the price is too high: L decreases as λ shrinks.`
+    : `It satisfies the relaxed constraint with equality.`;
+  box.innerHTML = `<p>λ = ${lam.toFixed(2)}: the maximizer is x = (${xs.join(", ")}) and
+    L(λ) = ${(lagIc[k]).toFixed(0)} + ${lam.toFixed(2)} × (${lagSl[k]}) = <b>${vals[k].toFixed(2)}</b>.
+    ${status}</p>
+    <p>The minimum, <b>${lagStar[1].toFixed(2)}</b> at λ ≈ ${lagStar[0].toFixed(2)}, lies between the
+    LP bound ${lagLP.toFixed(2)} and the integer optimum ${lagIP}.</p>`;
+  return box;
+}
+```
+
+::: {.callout-note collapse="true"}
+## Static version of this figure (for printing)
+
+```{python}
+#| label: fig-lagrangian
+#| fig-cap: "The Lagrangian function of the running example (blue): the upper envelope of 32 lines, one per point of $X$ (grey). Its minimum, about 30.6 at $\\lambda \\approx 0.69$, is the Lagrangian bound. It improves on the LP bound 32.9 (red) but does not reach the integer optimum 25 (green): there is a duality gap."
+fig, ax = plt.subplots(figsize=(6.0, 4.0))
+for ic, sl in zip(icpt, slope):
+    ax.plot([0, 1.5], [ic, ic + 1.5 * sl], color="0.75", lw=0.7, zorder=1)
+ax.plot(lams, Lvals, color=COLORS["p1"], lw=2.6, label="$L(\\lambda)$", zorder=3)
+ax.axhline(z_lp, color=COLORS["weak"], ls="--", lw=1.4, label=f"LP relaxation {z_lp:.1f}")
+ax.axhline(z_ip, color=COLORS["hull"], ls="--", lw=1.4, label=f"integer optimum {z_ip:.0f}")
+ax.scatter([lam_star], [L_star], s=50, color=COLORS["p1"], zorder=4)
+ax.annotate(f"$z_{{LD}} = {L_star:.1f}$", (lam_star, L_star), (lam_star + 0.15, L_star - 4.5),
+            fontsize=10, arrowprops=dict(arrowstyle="-", color="0.4"))
+ax.set_xlim(0, 1.5); ax.set_ylim(20, 56)
+ax.set_xlabel("$\\lambda$"); ax.set_ylabel("bound")
+ax.legend(loc="upper right", fontsize=9)
+plt.show()
+```
+:::
+
+## How good is the bound? Geoffrion's theorem
+
+::: {.callout-important}
+## Theorem (Geoffrion)
+$$
+z_{\text{LD}} = \max\{c^\top x : Ax \le b,\ x \in \operatorname{conv}(X)\}.
+$$
+:::
+
+So the Lagrangian dual convexifies **only the kept constraints**: it takes the integer
+hull of $X$, intersects it with the relaxed constraints as they are, and solves that LP.
+Two consequences:
+
+- $z_{\text{IP}} \le z_{\text{LD}} \le z_{\text{LP}}$. The Lagrangian bound is never worse
+  than the LP bound, because $\operatorname{conv}(X) \subseteq \{x : Dx \le d\}$.
+- If $\{x : Dx \le d\}$ already has integer vertices (Geoffrion's **integrality
+  property**), then $\operatorname{conv}(X) = \{x : Dx \le d\}$ and
+  $z_{\text{LD}} = z_{\text{LP}}$: the relaxation buys nothing in bound quality, only in
+  speed. To gain, the kept problem must be "hard enough" not to be solved by its own LP.
+
+```{python}
+#| label: fig-geoffrion
+#| fig-cap: "Geoffrion's theorem on the running example. The kept set $X$ (dots) has convex hull conv$(X)$ (blue). Intersecting it with the relaxed constraint $7x_1 + 6x_2 \\le 36$ (dashed) gives the orange region, and its LP optimum (orange star) has value 30.6, exactly the Lagrangian bound. The LP relaxation (red outline) is larger, with optimum 32.9; the integer hull (green) is smaller, with optimum 25."
+fig, ax = new_axes(1, xlim=(-0.4, 5.6), ylim=(-0.4, 8.0), size=4.6)
+shade_polygon(ax, convX, COLORS["p1"], alpha=0.18, label="conv$(X)$")
+from _lib.orplot import clip_halfplane
+inter = clip_halfplane(convX, aR, bR)
+shade_polygon(ax, inter, COLORS["p2"], alpha=0.40, label="conv$(X) \\cap \\{7x_1 + 6x_2 \\leq 36\\}$")
+ax.fill(*np.array(P_lp).T, fc="none", ec=COLORS["weak"], lw=1.6, label="LP relaxation")
+ax.fill(*np.array(convex_hull(integer_points())).T, fc="none", ec=COLORS["hull"], lw=1.8,
+        label="integer hull")
+xs = np.linspace(0, 5.3, 10)
+ax.plot(xs, (bR - aR[0] * xs) / aR[1], ls="--", color="0.3", lw=1.2)
+ax.scatter(X[:, 0], X[:, 1], s=14, color="black", zorder=4)
+xg, zg = lp(extra=[(np.array([-1.0, 1.0]), 2.0)])
+mark_point(ax, xg, COLORS["p2"], marker="*", size=220)
+mark_point(ax, x_lp, COLORS["weak"], marker="*", size=160)
+mark_point(ax, x_ip, COLORS["hull"], marker="*", size=160)
+ax.legend(loc="upper right", fontsize=8)
+plt.show()
+```
+
+In the example, $\operatorname{conv}(X)$ adds exactly one inequality to the kept
+constraints, $-x_1 + x_2 \le 2$ (the first Chvátal–Gomory cut on the
+[cutting planes](cutting-planes.qmd) page), and the Lagrangian bound equals the LP bound
+after that cut, $30.62$.
+
+::: {.callout-note collapse="true"}
+## Proof sketch of Geoffrion's theorem
+Since a linear function has the same maximum over $X$ as over $\operatorname{conv}(X)$,
+$L(\lambda) = \max\{c^\top x + \lambda^\top(b - Ax) : x \in \operatorname{conv}(X)\}$.
+With $X$ bounded, $\operatorname{conv}(X) = \{x : Fx \le f\}$ is a polytope, so this is an
+LP. Write its dual and combine it with the outer minimization over $\lambda \ge 0$:
+$$
+\min_{\lambda \ge 0} \max_{Fx \le f}\ c^\top x + \lambda^\top (b - Ax)
+\;=\; \max\{c^\top x : Ax \le b,\ Fx \le f\}
+$$
+by [LP duality](../../linear-programming/duality/lp-duality.qmd) applied to the LP on the
+right, with $\lambda$ the duals of $Ax \le b$.
+:::
+
+## Solving the Lagrangian dual: the subgradient method
+
+$L$ is convex but not differentiable at its kinks. If $x^\lambda$ is a maximizer at
+$\lambda$, then $g = b - Ax^\lambda$ is a **subgradient**: $L(\mu) \ge L(\lambda) +
+g^\top(\mu - \lambda)$ for all $\mu$. The **subgradient method** steps against it and
+projects back onto $\lambda \ge 0$:
+$$
+\lambda^{k+1} = \max\{0,\ \lambda^k - t_k\, (b - Ax^{\lambda^k})\}.
+$$
+Intuitively: if the relaxed constraint is violated, raise its price; if it has slack,
+lower the price. With step sizes $t_k \to 0$ and $\sum_k t_k = \infty$ the best value
+found converges to $z_{\text{LD}}$. @held1974 tested the method on large problems and
+proposed step sizes based on an estimate of the optimal value.
+
+```{python}
+#| label: fig-subgradient
+#| fig-cap: "Thirty subgradient iterations from $\\lambda = 0$ with steps $t_k = 0.005/\\sqrt{k+1}$. The price (left) climbs while the relaxed constraint is violated, then zigzags around $\\lambda^\\ast \\approx 0.69$; the bound (right) is not monotone, but the best value so far (dark line) approaches the Lagrangian bound 30.6 (dashed)."
+it = subgradient(30, step0=0.005)
+k = np.arange(len(it))
+fig, (a1, a2) = plt.subplots(1, 2, figsize=(9.0, 3.3))
+a1.plot(k, [t[0] for t in it], "o-", color=COLORS["p1"], ms=3.5, lw=1.2)
+a1.axhline(lam_star, color="0.4", ls="--", lw=1)
+a1.set_xlabel("iteration $k$"); a1.set_ylabel("$\\lambda^k$")
+Lk = np.array([t[1] for t in it])
+a2.plot(k, Lk, "o", color=COLORS["p1"], ms=3.5, alpha=0.6, label="$L(\\lambda^k)$")
+a2.plot(k, np.minimum.accumulate(Lk), color="0.15", lw=1.8, label="best so far")
+a2.axhline(L_star, color="0.4", ls="--", lw=1)
+a2.set_ylim(28, 56)
+a2.set_xlabel("iteration $k$"); a2.set_ylabel("bound")
+a2.legend(fontsize=9)
+for a in (a1, a2):
+    a.grid(alpha=0.3)
+plt.tight_layout(); plt.show()
+```
+
+The method is simple and needs only an oracle for the easy problem, which is why it is
+popular for large structured problems. Its drawbacks are slow, non-monotone convergence
+and no primal solution: the maximizers $x^{\lambda^k}$ are usually infeasible, and a
+heuristic must repair them into a feasible solution (which gives a lower bound, so the
+gap can be monitored). The LP-based view of
+[Dantzig–Wolfe decomposition](../../decomposition-methods/dantzig-wolfe/index.qmd) with
+column generation, solves the same dual more robustly, and also produces primal information.
+
+## In practice
+
+- **Choose what to relax** so that the remaining problem is easy but does not have the
+  integrality property. The classic examples relax constraints that couple otherwise
+  independent pieces (one knapsack, shortest path or spanning tree per piece).
+- **Inside branch and bound**, the Lagrangian bound replaces the LP bound at each node,
+  which pays off when it is much tighter or much cheaper to compute.
+- **Lagrangian heuristics** round or repair $x^{\lambda}$ to feasible solutions,
+  often of good quality, since the prices push toward feasibility.
+
+## Further reading
+
+- @geoffrion1974 for the theory, and @fisher1981 for a readable tutorial.
+- @held1970 for the original application to the travelling-salesman problem.
+- @conforti2014 for Lagrangian duality and its link to Dantzig–Wolfe reformulation.

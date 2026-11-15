@@ -1,0 +1,22 @@
+---
+kind: subcategory
+title: "Solution Methods"
+description: "Branch and bound, cutting planes, and Lagrangian relaxation: the three ideas inside every integer-programming solver."
+order: 2
+toc: false
+listing:
+  - id: topics
+    contents: "**/*.qmd"
+    include:
+      kind: topic
+    type: table
+    sort: "order"
+    fields: [title, description, categories]
+---
+
+How integer programs are solved: split the problem (branch and bound), tighten the relaxation (cutting planes), or relax the hard constraints into the objective (Lagrangian relaxation). Modern solvers combine all three.
+
+## Topics
+
+::: {#topics}
+:::

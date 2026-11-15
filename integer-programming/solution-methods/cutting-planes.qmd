@@ -1,0 +1,215 @@
+---
+kind: topic
+title: "Cutting Planes"
+description: "Add valid inequalities that cut off the fractional LP optimum but no integer point: Gomory and Chvátal–Gomory cuts, the closure and rank, cover inequalities, and branch and cut."
+categories: [integer-programming, algorithms, polyhedra]
+order: 2
+level: intro
+prerequisites: "LP relaxations and formulation strength"
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from _lib.orplot import new_axes, shade_polygon, convex_hull, mark_point, COLORS
+from _lib.toy_ip import c, lp, integer_points, all_rows, polygon, cutting_plane_rounds
+
+G, h = all_rows()
+P_lp = polygon(G, h)
+pts = integer_points()
+hull = convex_hull(pts)
+rounds = cutting_plane_rounds(6)
+
+def fmt_cut(a, beta):
+    """Pretty-print a x <= beta with integer coefficients."""
+    terms = []
+    for j, v in enumerate(a):
+        v = int(round(v))
+        if v == 0:
+            continue
+        coef = "" if abs(v) == 1 else str(abs(v))
+        sign = "-" if v < 0 else ("+" if terms else "")
+        terms.append((f"{sign} " if terms else sign) + f"{coef}x_{j + 1}")
+    return " ".join(terms) + f" \\leq {int(beta)}"
+```
+
+## The idea
+
+[Branch and bound](branch-and-bound.qmd) splits the problem when the LP optimum is
+fractional. A cutting-plane method instead **tightens** the relaxation: it finds an
+inequality that every integer solution satisfies but the fractional LP optimum violates,
+adds it, and solves the LP again. Such an inequality is a **cut**. Repeating moves the
+relaxation toward the [integer hull](../modeling-and-formulations/formulation-strength.qmd).
+
+**Example.** In the running example, the first constraint reads
+$-5x_1 + 5x_2 \le 14$. Divide by 5: $-x_1 + x_2 \le 2.8$. For integer $x$ the left side
+is an integer, so it is at most $2$:
+$$
+-x_1 + x_2 \le 2 .
+$$
+No integer point is lost, but the LP optimum $(1.48, 4.28)$, where $-x_1 + x_2 = 2.8$, is
+cut off. That is the whole trick: **combine constraints, then round down**.
+
+## Chvátal–Gomory cuts
+
+Let $P = \{x \ge 0 : Ax \le b\}$ and $S = P \cap \mathbb{Z}^n$. Take any multipliers
+$u \ge 0$. The combination $u^\top A x \le u^\top b$ is valid for $P$. Since $x \ge 0$,
+rounding down the coefficients keeps it valid, and since the left side is then an
+integer for integer $x$, the right side can be rounded down too:
+
+::: {.callout-important}
+## Chvátal–Gomory inequality
+For every $u \ge 0$, the inequality
+$$
+\lfloor u^\top A \rfloor\, x \;\le\; \lfloor u^\top b \rfloor
+$$
+is satisfied by every point of $S$.
+:::
+
+@gomory1958 introduced cuts of this kind, read off from a row of the optimal simplex
+tableau, and showed that a cutting-plane algorithm using them, with suitable rules,
+finds an integer optimum after finitely many cuts. @chvatal1973 studied the general
+rounding procedure above, which is why the cuts carry both names.
+
+::: {.callout-note collapse="true"}
+## Gomory's fractional cut from the simplex tableau
+At an optimal basis, a row of the simplex tableau reads
+$x_i + \sum_{j \in N} \bar a_{ij} x_j = \bar b_i$, where $N$ indexes the nonbasic
+variables, all equal to $0$ at the LP optimum. If $\bar b_i$ is fractional, write
+$f(t) = t - \lfloor t \rfloor$ for the fractional part. Every integer solution satisfies
+$$
+\sum_{j \in N} f(\bar a_{ij})\, x_j \;\ge\; f(\bar b_i),
+$$
+while the LP optimum (all $x_j = 0$, $j \in N$) gives $0 < f(\bar b_i)$, so it is cut off.
+This is a Chvátal–Gomory cut for a particular choice of $u$ (a row of the basis
+inverse), written in terms of the nonbasic variables. Its mixed-integer generalization,
+the Gomory mixed-integer cut [@gomory1960], is one of the most effective cuts in solvers
+today.
+:::
+
+### The cutting-plane loop on the running example
+
+Repeat: solve the LP; find a Chvátal–Gomory cut violated by its optimum; add it. Cuts
+may combine earlier cuts as well as the original constraints.
+
+```{python}
+#| label: fig-cg-rounds
+#| fig-cap: "Pure cutting planes on the running example. Each panel shows the current relaxation (red), the LP optimum (star) and the next Chvátal–Gomory cut (dashed). Four cuts suffice: after them the LP optimum is the integer point $(2,3)$. The integer hull (green outline) is reached along the way; the second cut is only a stepping stone, used to derive the third and fourth."
+nr = len(rounds)
+fig, axes = new_axes(nr, xlim=(-0.4, 5.6), ylim=(-0.4, 5.4), size=2.9)
+Gc, hc = G.copy(), h.copy()
+for k, (ax, r) in enumerate(zip(axes, rounds)):
+    poly = polygon(Gc, hc)
+    shade_polygon(ax, poly, COLORS["weak"], alpha=0.22, lw=1.2)
+    ax.fill(*np.array(hull).T, fc="none", ec=COLORS["hull"], lw=1.4)
+    ax.scatter(pts[:, 0], pts[:, 1], s=9, color="black", zorder=4)
+    final = r["cut"] is None
+    mark_point(ax, r["x"], COLORS["hull"] if final else COLORS["weak"], marker="*", size=150)
+    title = f"round {k + 1}: LP bound {r['z']:.1f}"
+    if not final:
+        a, beta = r["cut"]
+        xs = np.linspace(-0.4, 5.6, 50)
+        if abs(a[1]) > 1e-9:
+            ax.plot(xs, (beta - a[0] * xs) / a[1], ls="--", color="0.2", lw=1.3)
+        else:
+            ax.axvline(beta / a[0], ls="--", color="0.2", lw=1.3)
+        title += f"\ncut ${fmt_cut(a, beta)}$"
+        Gc = np.vstack([Gc, a]); hc = np.append(hc, beta)
+    else:
+        title += "\ninteger: stop"
+    ax.set_title(title, fontsize=9)
+    ax.set_xlabel(""); ax.set_ylabel("")
+plt.tight_layout(); plt.show()
+```
+
+```{python}
+#| label: cg-table
+#| output: asis
+from fractions import Fraction
+lines = ["| Round | LP optimum | LP bound | Cut added | Multipliers used |", "|---|---|---|---|---|"]
+names = ["$-5x_1+5x_2\\le14$", "$7x_1+6x_2\\le36$", "$x_1\\ge0$", "$x_2\\ge0$", "$x_1\\le5$", "$x_2\\le6$"]
+for k, r in enumerate(rounds):
+    if r["cut"] is not None:
+        names_k = names + [f"cut {i + 1}" for i in range(k)]
+        used = ", ".join(f"{Fraction(u).limit_denominator(50)} × {names_k[i]}"
+                         for i, u in enumerate(r["u"]) if u > 1e-9)
+        cut = f"${fmt_cut(*r['cut'])}$"
+    else:
+        used, cut = "", "none (LP optimum integer)"
+    lines.append(f"| {k + 1} | ({r['x'][0]:.2f}, {r['x'][1]:.2f}) | {r['z']:.2f} | {cut} | {used} |")
+print("\n".join(lines))
+```
+
+### The closure and the rank
+
+Adding **all** Chvátal–Gomory cuts of $P$ at once gives the **Chvátal closure**
+$P'$. Repeating gives $P \supseteq P' \supseteq P'' \supseteq \dots \supseteq
+\operatorname{conv}(S)$.
+
+::: {.callout-important}
+## Theorem (finite rank)
+If $P$ is a rational polytope, then $P^{(t)} = \operatorname{conv}(S)$ for some finite $t$.
+:::
+
+This is due to @chvatal1973. The smallest such $t$ is the **Chvátal rank** of $P$; it
+measures how far the formulation is from ideal. In the example, $-x_1 + x_2 \le 2$ has
+rank 1 (one rounding of the original constraints), while $x_2 \le 3$ and
+$x_1 + x_2 \le 5$ were derived from earlier cuts. The rank can grow with the problem
+size even for simple problems, which is one reason pure cutting-plane methods stall in
+practice: late cuts are nearly parallel to the objective and change the bound very
+little.
+
+## Cuts that use problem structure: cover inequalities
+
+General-purpose cuts ignore the meaning of the constraints. Often a single constraint
+already has useful structure. Consider a 0–1 knapsack constraint
+$\sum_j a_j x_j \le b$ with $a_j > 0$, such as the project-selection budget from
+[Modeling with Binary Variables](../modeling-and-formulations/modeling-with-binaries.qmd):
+$$
+3y_1 + 4y_2 + 2y_3 + 5y_4 + 3y_5 \le 10 .
+$$
+A set $C$ of items is a **cover** if $\sum_{j \in C} a_j > b$: they cannot all be chosen.
+So at most $|C| - 1$ of them can be:
+$$
+\sum_{j \in C} x_j \le |C| - 1 .
+$$
+Here $C = \{1, 2, 4\}$ costs $12 > 10$, giving $y_1 + y_2 + y_4 \le 2$. The LP point
+$y = (1, 1, 0, 0.6, 0)$ satisfies the budget ($3 + 4 + 3 = 10$) but violates the cover
+inequality ($2.6 > 2$).
+
+Cover inequalities, and the conditions under which they define facets of the knapsack
+polytope, were studied independently by @balas1975, @wolsey1975 and @hammer1975. They
+apply to any constraint row with binary variables, which is why solvers generate them
+automatically.
+
+## Separation, and branch and cut
+
+To use a family of cuts we need a **separation** routine: given the LP optimum $x^*$,
+find a cut in the family violated by $x^*$, or report that none exists. For
+Chvátal–Gomory cuts read from the tableau this is immediate; for covers it is itself a
+small knapsack problem, solved heuristically in practice. A deep theorem connects
+separation and optimization: for a family of polytopes, one can optimize linear
+functions in polynomial time if and only if one can separate in polynomial time
+[@grotschel1981].
+
+Cuts and branching work best together. In **branch and cut** [@padberg1991], cuts are
+added at the root and at nodes of the
+[branch-and-bound](branch-and-bound.qmd) tree, so each node's LP is tighter and more
+nodes are pruned. Every modern MIP solver works this way, combining several cut
+families: Gomory mixed-integer cuts, covers, flow covers, cliques, and
+[lift-and-project cuts](../disjunctive-programming/lift-and-project.qmd) [@balas1993].
+
+## Why it works
+
+A cut never removes an integer point, so the integer optimum is unchanged, while each
+cut removes the current LP optimum, so the LP bound can only go down. With the right
+family (Chvátal–Gomory cuts on a bounded problem) the process is guaranteed to reach the
+integer hull in finitely many rounds. In practice the first few rounds of cuts close
+much of the gap cheaply, and branching finishes the job.
+
+## Further reading
+
+- @gomory1958 and @chvatal1973 for the original cutting-plane theory.
+- @conforti2014 for Chvátal–Gomory, split and Gomory mixed-integer cuts in depth.
+- Next: [Lagrangian Relaxation](lagrangian-relaxation.qmd).

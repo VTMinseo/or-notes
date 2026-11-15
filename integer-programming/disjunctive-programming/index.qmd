@@ -2,7 +2,7 @@
 kind: subcategory
 title: "Disjunctive Programming"
 description: "Optimizing over unions of polyhedra: either–or constraints, big-M, and the convex hull."
-order: 1
+order: 3
 toc: false
 listing:
   - id: topics

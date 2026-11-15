@@ -70,9 +70,13 @@ The site cites its sources the way a research paper would. These rules are not o
   Bertsimas–Sim protection function and bounds B(n, Γ), robust knapsack), and
   `_lib/toy_lp.py` (the chairs-and-tables workshop LP used on every Linear Programming
   page: vertices, HiGHS solve with duals, simplex path, central path, ellipsoid steps),
-  and `_lib/toy_network.py` (the 6-node s–t network and the worker–job bipartite graph
+  `_lib/toy_network.py` (the 6-node s–t network and the worker–job bipartite graph
   used on every Network Optimization page: Dijkstra steps, Edmonds–Karp augmentations,
-  min-cost flow with potentials, matching LP, and `draw_network` for consistent drawings).
+  min-cost flow with potentials, matching LP, and `draw_network` for consistent drawings),
+  and `_lib/toy_ip.py` (the 2-variable IP max 2x1+7x2 used on the Integer Programming
+  basics pages: LP relaxation with bounds, integer hull, branch-and-bound snapshots and
+  tree layout, Chvátal–Gomory cut rounds, Lagrangian function and subgradient, and a
+  facility-location instance for weak vs. strong formulations).
 - Every figure cell gets `#| label: fig-...` and a `#| fig-cap:` that says what to notice.
 - Code runs with the project root as working directory (`execute-dir: project`).
 - Python dependencies go in `requirements.txt`.
