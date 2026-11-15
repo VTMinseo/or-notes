@@ -65,7 +65,7 @@ The site cites its sources the way a research paper would. These rules are not o
 - Matrix-structure schematics: `from _lib.structure import draw_structure`, then
   `draw_structure(ax, "benders" | "dw", K=3)` (linking variables vs. linking constraints).
 - Shared toy models, so related pages show consistent numbers: `_lib/toy_benders.py`
-  (Benders loop, Routine 1 of Fang et al.) and `_lib/toy_dw.py` (column generation,
+  (Benders loop, Routine 1 of Fang et al.), `_lib/toy_dw.py` (column generation,
   LP / Dantzig–Wolfe / integer bounds), and `_lib/toy_robust.py` (2-variable robust LP,
   Bertsimas–Sim protection function and bounds B(n, Γ), robust knapsack).
 - Every figure cell gets `#| label: fig-...` and a `#| fig-cap:` that says what to notice.
@@ -87,12 +87,11 @@ The site cites its sources the way a research paper would. These rules are not o
 
 ## Writing style
 
-- Never start a line with `@key.` or `@key)`: Pandoc reads it as an example-list marker
-  and the citation disappears. Re-wrap the line so the citation is not first.
-
 - Start with the plain-language idea and a tiny example, then the math, then why it works.
 - Put proofs in collapsed callouts. Use `$...$` / `$$...$$` for math.
 - Keep pages self-contained; link to related topics and paper pages.
+- Never start a line with `@key.` or `@key)`: Pandoc reads it as an example-list marker
+  and the citation disappears. Re-wrap the line so the citation is not first.
 
 ## Build
 
